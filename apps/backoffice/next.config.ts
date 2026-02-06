@@ -1,7 +1,12 @@
-import type { NextConfig } from "next";
-
-const nextConfig: NextConfig = {
-  /* config options here */
+/** @type {import('next').NextConfig} */
+const nextConfig = {
+  transpilePackages: [
+    "@vicaper/contracts",
+    "@vicaper/domain",
+    "@vicaper/infra-supabase",
+    "@vicaper/events",
+    "@vicaper/observability",
+  ],
 };
 
-export default nextConfig;
+module.exports = nextConfig;

@@ -1,294 +1,42 @@
-@tailwind base;
-@tailwind components;
-@tailwind utilities;
 :root {
-  --bg-main: #f8fafc;
-  --sidebar: #ffffff;
-  --primary: #2563eb;
-  --success: #10b981;
-  --text-dark: #1e293b;
-  --text-muted: #64748b;
-  --border: #e2e8f0;
-  --radius: 12px;
+  --background: #ffffff;
+  --foreground: #171717;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --background: #0a0a0a;
+    --foreground: #ededed;
+  }
 }
 
 html,
 body {
-  height: 100%;
+  max-width: 100vw;
+  overflow-x: hidden;
 }
 
 body {
-  background-color: var(--bg-main);
-  font-family:
-    ui-sans-serif,
-    system-ui,
-    -apple-system,
-    Segoe UI,
-    Roboto,
-    Helvetica,
-    Arial,
-    "Apple Color Emoji",
-    "Segoe UI Emoji";
-  color: var(--text-dark);
+  color: var(--foreground);
+  background: var(--background);
+  font-family: Arial, Helvetica, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
 }
 
-/* --- Layout --- */
-.vp-shell {
-  display: grid;
-  grid-template-columns: 280px 1fr;
-  min-height: 100vh;
-}
-
-.vp-sidebar {
-  background: var(--sidebar);
-  border-right: 1px solid var(--border);
-  padding: 18px;
-}
-
-.vp-main {
-  display: flex;
-  flex-direction: column;
-  min-width: 0;
-}
-
-.vp-header {
-  position: sticky;
-  top: 0;
-  z-index: 10;
-  background: rgba(248, 250, 252, 0.9);
-  backdrop-filter: blur(10px);
-  border-bottom: 1px solid var(--border);
-  padding: 14px 18px;
-}
-
-.vp-content {
-  padding: 18px;
-}
-
-/* --- Cards --- */
-.card {
-  background: white;
-  border-radius: var(--radius);
-  border: 1px solid var(--border);
-  box-shadow: 0 4px 6px -1px rgb(0 0 0 / 0.08);
-}
-
-.card-pad {
-  padding: 18px;
-}
-
-.section-title {
-  font-size: 1.1rem;
-  font-weight: 700;
-  letter-spacing: -0.01em;
-}
-
-.muted {
-  color: var(--text-muted);
-}
-
-/* --- Controls --- */
-.input {
-  width: 100%;
-  padding: 10px 12px;
-  border: 1px solid var(--border);
-  border-radius: 10px;
-  outline: none;
-  background: white;
-}
-
-.input:focus {
-  border-color: var(--primary);
-  box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.12);
-}
-
-.btn {
-  border: 1px solid var(--border);
-  background: white;
-  border-radius: 10px;
-  padding: 10px 12px;
-  cursor: pointer;
-  transition:
-    transform 0.12s,
-    box-shadow 0.12s,
-    border-color 0.12s;
-}
-
-.btn:hover {
-  transform: translateY(-1px);
-  box-shadow: 0 6px 12px -8px rgb(0 0 0 / 0.25);
-}
-
-.btn-primary {
-  background: var(--primary);
-  border-color: var(--primary);
-  color: white;
-}
-
-/* --- Calendar --- */
-.calendar-container {
-  background: white;
-  border-radius: var(--radius);
-  border: 1px solid var(--border);
-  box-shadow: 0 4px 6px -1px rgb(0 0 0 / 0.08);
-  padding: 18px;
-}
-
-.event-pill {
-  background: #dbeafe; /* azul suave */
-  border-left: 4px solid var(--primary);
-  padding: 8px 12px;
-  border-radius: 999px;
-  font-size: 0.85rem;
-  margin-bottom: 8px;
-  cursor: pointer;
-  transition: transform 0.2s;
-  display: flex;
-  gap: 8px;
-  align-items: center;
-  justify-content: space-between;
-}
-
-.event-pill:hover {
-  transform: translateY(-2px);
-}
-
-.badge {
-  font-size: 0.75rem;
-  padding: 4px 8px;
-  border-radius: 999px;
-  border: 1px solid var(--border);
-  background: #f1f5f9;
-}
-
-.grid-2 {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 14px;
-}
-
-.grid-3 {
-  display: grid;
-  grid-template-columns: 1fr 1fr 1fr;
-  gap: 14px;
-}
-
-@media (max-width: 960px) {
-  .vp-shell {
-    grid-template-columns: 1fr;
-  }
-  .vp-sidebar {
-    border-right: none;
-    border-bottom: 1px solid var(--border);
-  }
-}
-/* --- VICAPER base styling (sin @apply) --- */
-
-h1 {
-  font-size: 24px;
-  font-weight: 700;
-  letter-spacing: -0.02em;
-  margin: 0 0 8px;
-}
-
-p {
-  color: #64748b;
-}
-
-a {
-  color: #2563eb;
-  text-decoration: none;
-}
-a:hover {
-  text-decoration: underline;
-}
-
-label {
-  display: block;
-  font-size: 12px;
-  font-weight: 600;
-  color: #475569;
-  margin-bottom: 6px;
-}
-
-/* Inputs */
-input,
-select,
-textarea {
-  width: 100%;
+* {
   box-sizing: border-box;
-  padding: 10px 14px;
-  border: 1px solid #e2e8f0;
-  border-radius: 12px;
-  background: #ffffff;
-  color: #0f172a;
-  outline: none;
+  padding: 0;
+  margin: 0;
 }
 
-input:focus,
-select:focus,
-textarea:focus {
-  border-color: #2563eb;
-  box-shadow: 0 0 0 4px rgba(37, 99, 235, 0.12);
-}
-
-/* Buttons */
-button {
-  border: 1px solid #e2e8f0;
-  background: #ffffff;
-  padding: 10px 14px;
-  border-radius: 12px;
-  cursor: pointer;
-  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.06);
-  transition:
-    transform 0.12s,
-    background 0.12s;
-}
-button:hover {
-  background: #f8fafc;
-  transform: translateY(-1px);
-}
-
-/* Tables */
-table {
-  width: 100%;
-  border-collapse: collapse;
-}
-th {
-  text-align: left;
-  font-size: 12px;
-  color: #475569;
-  font-weight: 700;
-  border-bottom: 1px solid #e2e8f0;
-  padding: 10px 12px;
-}
-td {
-  border-bottom: 1px solid #e2e8f0;
-  padding: 10px 12px;
-  font-size: 14px;
-}
 a {
   color: inherit;
   text-decoration: none;
 }
-/* Efecto de elevación para las cards */
-.card {
-  transition: box-shadow 0.3s ease;
-}
 
-/* El formulario debe resaltar más */
-aside .card {
-  background: linear-gradient(to bottom, #ffffff, #fcfdff);
-  border: 1px solid #eef2ff;
-}
-
-/* Estilo para los ítems de la lista cuando haya citas */
-.appointment-item {
-  border-left: 4px solid transparent;
-  transition: all 0.2s;
-}
-
-.appointment-item:hover {
-  border-left-color: var(--primary);
-  background-color: #f8fafc;
+@media (prefers-color-scheme: dark) {
+  html {
+    color-scheme: dark;
+  }
 }

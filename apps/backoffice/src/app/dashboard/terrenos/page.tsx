@@ -1,62 +1,97 @@
-import { supabaseServer } from "@/lib/supabase/server";
-import { createTerreno } from "./actions";
+"use client";
 
-type TerrenoRow = {
-  id: string;
-  nombre: string;
-  marca: string | null;
-  stock: number | null;
-};
+import { useEffect, useState } from "react";
 
-export default async function TerrenosPage() {
-  const supabase = await supabaseServer();
+type Terreno = { id: string; name: string; created_at: string };
 
-  const { data, error } = await supabase
-    .from("terrenos")
-    .select("id,nombre,marca,stock")
-    .order("created_at", { ascending: true });
+async function jsonFetch<T>(input: RequestInfo, init?: RequestInit): Promise<T> {
+  const res = await fetch(input, {
+    ...init,
+    headers: { "content-type": "application/json", ...(init?.headers ?? {}) },
+  });
+  const data = (await res.json().catch(() => ({}))) as any;
+  if (!res.ok) {
+    const code = data?.error?.code ?? "REQUEST_FAILED";
+    const message = data?.error?.message ?? `Request failed (${res.status})`;
+    throw new Error(`${code}: ${message}`);
+  }
+  return data as T;
+}
 
-  if (error) throw new Error(error.message);
+export default function TerrenosPage() {
+  const [terrenos, setTerrenos] = useState<Terreno[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [msg, setMsg] = useState("");
 
-  const terrenos: TerrenoRow[] = (data ?? []) as TerrenoRow[];
+  async function load() {
+    setMsg("");
+    setLoading(true);
+    try {
+      const data = await jsonFetch<{ terrenos: Terreno[] }>("/api/v1/terrenos");
+      setTerrenos(data.terrenos ?? []);
+    } catch (e) {
+      setMsg(`❌ ${(e as Error).message}`);
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  useEffect(() => {
+    void load();
+  }, []);
+
+  async function setActive(terrenoId: string) {
+    setMsg("");
+    setLoading(true);
+    try {
+      await jsonFetch<{ ok: true }>("/api/v1/terrenos/active", {
+        method: "POST",
+        body: JSON.stringify({ terrenoId }),
+      });
+      window.location.href = "/dashboard/scheduling";
+    } catch (e) {
+      setMsg(`❌ ${(e as Error).message}`);
+    } finally {
+      setLoading(false);
+    }
+  }
 
   return (
-    <div className="space-y-6">
-      <div className="flex items-end justify-between gap-4">
-        <div>
-          <h1 className="text-2xl font-semibold">Terrenos</h1>
-          <p className="text-sm text-gray-600">Crea y administra tus terrenos (tenants).</p>
-        </div>
+    <div style={{ maxWidth: 980 }}>
+      <h1 style={{ marginTop: 0 }}>Seleccionar Terreno</h1>
+
+      <div style={{ display: "flex", gap: 10, alignItems: "center" }}>
+        <button disabled={loading} onClick={load}>
+          {loading ? "Cargando..." : "Refrescar"}
+        </button>
+        <a href="/dashboard/onboarding">Crear nuevo terreno</a>
       </div>
 
-      <section className="border rounded-xl p-4 space-y-3">
-        <div className="font-medium">Crear terreno</div>
-        <form action={createTerreno} className="grid gap-2 max-w-md">
-          <input className="border rounded-lg p-2" name="nombre" placeholder="Nombre del terreno" />
-          <input className="border rounded-lg p-2" name="marca" placeholder="Marca (opcional)" />
-          <input className="border rounded-lg p-2" name="stock" type="number" min={0} placeholder="Stock (ej: 10)" />
-          <button className="rounded-lg bg-black text-white p-2 w-fit">Crear</button>
-        </form>
-      </section>
+      {msg ? (
+        <div style={{ marginTop: 12, padding: 10, border: "1px solid #eee", background: "#fafafa" }}>{msg}</div>
+      ) : null}
 
-      <section className="border rounded-xl p-4">
-        <div className="font-medium mb-3">Mis terrenos</div>
-        {terrenos.length === 0 ? (
-          <div className="text-sm text-gray-600">Todavía no tienes terrenos creados.</div>
-        ) : (
-          <ul className="space-y-2 text-sm">
-            {terrenos.map((t) => (
-              <li key={t.id} className="border rounded-lg p-3 flex justify-between">
-                <div>
-                  <div className="font-medium">{t.nombre}</div>
-                  <div className="text-gray-600">{t.marca ?? "—"}</div>
-                </div>
-                <div>stock: {t.stock ?? 0}</div>
-              </li>
-            ))}
-          </ul>
-        )}
-      </section>
+      <div style={{ marginTop: 12, display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(280px, 1fr))", gap: 12 }}>
+        {terrenos.map((t) => (
+          <div key={t.id} style={{ border: "1px solid #eee", borderRadius: 12, padding: 12 }}>
+            <div style={{ fontWeight: 700 }}>{t.name}</div>
+            <div style={{ fontSize: 12, color: "#777", wordBreak: "break-all" }}>{t.id}</div>
+            <div style={{ fontSize: 12, color: "#777" }}>{new Date(t.created_at).toLocaleString()}</div>
+
+            <div style={{ marginTop: 10 }}>
+              <button disabled={loading} onClick={() => setActive(t.id)}>
+                Usar este terreno
+              </button>
+            </div>
+          </div>
+        ))}
+      </div>
+
+      {terrenos.length === 0 && !loading ? (
+        <div style={{ marginTop: 12, color: "#777" }}>
+          No tienes terrenos todavía. Ve a <a href="/dashboard/onboarding">Onboarding</a> para crear el primero.
+        </div>
+      ) : null}
     </div>
   );
 }
