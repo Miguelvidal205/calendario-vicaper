@@ -29,7 +29,7 @@ async function requireTerrenoAdmin(userId: string, terrenoId: string) {
 
   // RLS debería permitir al menos ver su membership
   const { data, error } = await sb
-    .from("terreno_users")
+    .from("terreno_members")
     .select("role")
     .eq("terreno_id", terrenoId)
     .eq("user_id", userId)
