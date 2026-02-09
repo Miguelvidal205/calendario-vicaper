@@ -1,4 +1,3 @@
-// packages/contracts/src/publicBooking.ts
 import { z } from "zod";
 
 export const PublicBookingAvailabilityQuery = z.object({
@@ -6,14 +5,14 @@ export const PublicBookingAvailabilityQuery = z.object({
 });
 
 export const PublicBookingSlotDto = z.object({
-  startsAt: z.string(), // ISO
-  endsAt: z.string(), // ISO
+  startsAt: z.string(),
+  endsAt: z.string(),
 });
 
 export const PublicBookingAvailabilityResponse = z.object({
   terrenoId: z.string().uuid(),
   timezone: z.string(),
-  date: z.string(), // YYYY-MM-DD
+  date: z.string(),
   slotDurationMinutes: z.number().int().positive(),
   slots: z.array(PublicBookingSlotDto),
 });
@@ -22,12 +21,12 @@ export type PublicBookingAvailabilityResponse = z.infer<
 >;
 
 export const PublicBookingCreateRequest = z.object({
-  startsAt: z.string(), // ISO in UTC
+  startsAt: z.string(),
   visitorName: z.string().min(2).max(120),
   visitorEmail: z.string().email().max(200),
   visitorPhone: z.string().min(5).max(30),
   notes: z.string().max(2000).optional(),
-  bookingKey: z.string().min(12).max(200), // enviado por iframe
+  bookingKey: z.string().min(12).max(200),
 });
 
 export const PublicBookingCreateResponse = z.object({

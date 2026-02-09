@@ -58,3 +58,24 @@ export const BookingSettingsUpdateRequest = z.object({
 export type BookingSettingsUpdateRequest = z.infer<
   typeof BookingSettingsUpdateRequest
 >;
+export const EmbedDomainDto = z.object({
+  id: z.string().uuid(),
+  domain: z.string().min(1).max(255),
+  enabled: z.boolean(),
+});
+export type EmbedDomainDto = z.infer<typeof EmbedDomainDto>;
+
+export const EmbedDomainsListResponse = z.object({
+  terrenoId: z.string().uuid(),
+  items: z.array(EmbedDomainDto),
+});
+
+export const EmbedDomainCreateRequest = z.object({
+  domain: z.string().min(1).max(255),
+  enabled: z.boolean().optional(),
+});
+
+export const RotateBookingKeyResponse = z.object({
+  terrenoId: z.string().uuid(),
+  bookingKey: z.string().min(12),
+});

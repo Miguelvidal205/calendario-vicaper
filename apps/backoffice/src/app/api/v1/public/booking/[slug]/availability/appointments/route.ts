@@ -2,8 +2,13 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { supabaseAdmin } from "@/lib/supabase/admin";
 import { jsonError } from "@/lib/http/errorResponse";
-import { PublicBookingAvailabilityQuery } from "@vicaper/contracts";
+import {
+  PublicBookingCreateRequest,
+  PublicBookingCreateResponse,
+} from "@vicaper/contracts";
+import { sha256Hex } from "@/lib/publicBooking/bookingKey";
 import { makePublicBookingService } from "@/lib/compose/makePublicBookingService";
+import { toChileDateTime } from "@/lib/time/toChileDateTime";
 
 const ParamsSchema = z.object({
   slug: z.string().min(2).max(200),
@@ -45,7 +50,6 @@ async function verifyOriginAllowed(
   terrenoId: string,
   host: string | null,
 ) {
-  // Si no hay host, lo dejamos pasar para facilitar pruebas (puedes endurecer luego).
   if (!host) return;
 
   const { data, error } = await admin
@@ -66,41 +70,62 @@ async function verifyOriginAllowed(
   }
 }
 
-export async function GET(
+async function verifyBookingKey(
+  admin: ReturnType<typeof supabaseAdmin>,
+  terrenoId: string,
+  bookingKey: string,
+) {
+  const { data, error } = await admin
+    .from("terreno_booking_keys")
+    .select("booking_key_hash")
+    .eq("terreno_id", terrenoId)
+    .single();
+
+  if (error) throw new Error(error.message);
+
+  const got = sha256Hex(bookingKey);
+  if (got !== String((data as any).booking_key_hash)) {
+    const err = new Error("BOOKING_UNAUTHORIZED");
+    (err as any).code = "BOOKING_UNAUTHORIZED";
+    throw err;
+  }
+}
+
+export async function POST(
   req: Request,
   ctx: { params: Promise<{ slug: string }> },
 ) {
   try {
     const { slug } = ParamsSchema.parse(await ctx.params);
 
-    const url = new URL(req.url);
-    const q = PublicBookingAvailabilityQuery.parse({
-      date: url.searchParams.get("date"),
-    });
+    const body = await req.json();
+    const parsed = PublicBookingCreateRequest.parse(body);
 
     const admin = supabaseAdmin();
     const { terrenoId } = await resolveTerrenoBySlug(admin, slug);
 
     await verifyOriginAllowed(admin, terrenoId, originHost(req));
+    await verifyBookingKey(admin, terrenoId, parsed.bookingKey);
+
+    const { date, time } = toChileDateTime(parsed.startsAt);
 
     const service = await makePublicBookingService(admin);
 
-    // tu service debería exponer algo tipo getAvailability({ terrenoId, date })
-    const avail = await (service as any).getAvailability({
+    // Tu createBooking espera date/time, no startsAt
+    const created = await (service as any).createBooking({
       terrenoId,
-      date: q.date,
+      date,
+      time,
+      visitorName: parsed.visitorName,
+      visitorEmail: parsed.visitorEmail,
+      visitorPhone: parsed.visitorPhone,
+      notes: parsed.notes,
     });
 
-    return NextResponse.json({
-      terrenoId,
-      timezone: avail.timezone ?? "America/Santiago",
-      date: q.date,
-      slotDurationMinutes: avail.slotDurationMinutes ?? 60,
-      slots: (avail.slots ?? []).map((s: any) => ({
-        startsAt: new Date(s.startsAt).toISOString(),
-        endsAt: new Date(s.endsAt).toISOString(),
-      })),
+    const resp = PublicBookingCreateResponse.parse({
+      appointmentId: created.id,
     });
+    return NextResponse.json(resp);
   } catch (e: any) {
     return jsonError(e);
   }

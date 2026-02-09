@@ -68,9 +68,25 @@ function handleNoActiveTerreno(e: unknown): boolean {
   return false;
 }
 
+function pickDefaultAssignee(members: MemberDto[]): string {
+  // Prioridad: agent > admin > installer > primero
+  const agent = members.find((m) => m.role === "agent")?.user_id;
+  if (agent) return agent;
+
+  const admin = members.find((m) => m.role === "admin")?.user_id;
+  if (admin) return admin;
+
+  const installer = members.find((m) => m.role === "installer")?.user_id;
+  if (installer) return installer;
+
+  return members[0]?.user_id ?? "";
+}
+
 export default function SchedulingPage() {
   const todayLocal = useMemo(() => new Date().toISOString().slice(0, 10), []);
   const [day, setDay] = useState<string>(todayLocal);
+
+  // ahora se autoselecciona desde members
   const [assignedUserId, setAssignedUserId] = useState<string>("");
 
   const [startsAtLocal, setStartsAtLocal] = useState<string>(() => `${todayLocal}T10:00`);
@@ -83,26 +99,66 @@ export default function SchedulingPage() {
   const [msg, setMsg] = useState<string>("");
 
   const [members, setMembers] = useState<MemberDto[]>([]);
+  const [membersLoading, setMembersLoading] = useState(false);
 
   useEffect(() => {
     // mantener startsAtLocal alineado al día cuando cambia
     setStartsAtLocal(`${day}T10:00`);
   }, [day]);
 
-  async function loadAvailability() {
-    setMsg("");
-    if (!assignedUserId) {
-      setMsg("⚠️ Debes llenar assignedUserId.");
-      return;
+  // Cargar miembros del terreno activo y autoseleccionar asignado
+  useEffect(() => {
+    let cancelled = false;
+
+    async function loadMembers() {
+      setMembersLoading(true);
+      setMsg("");
+      try {
+        const data = await jsonFetch<{ members: MemberDto[] }>("/api/v1/terreno/members");
+        if (cancelled) return;
+
+        const list = data.members ?? [];
+        setMembers(list);
+
+        const picked = pickDefaultAssignee(list);
+        setAssignedUserId((prev) => prev || picked);
+
+        if (!picked) {
+          setMsg("⚠️ No hay miembros en este terreno para asignar citas.");
+        }
+      } catch (e) {
+        if (handleNoActiveTerreno(e)) return;
+
+        const err = e as any;
+        setMsg(`❌ ${err?.code ? `${err.code}: ` : ""}${err?.message ?? "Error cargando miembros"}`);
+      } finally {
+        if (!cancelled) setMembersLoading(false);
+      }
     }
 
-    
+    void loadMembers();
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  async function loadAvailability() {
+    setMsg("");
+
+    // Si aún no hay assignee, tratamos de tomarlo desde members sin bloquear con warning feo
+    const assignee = assignedUserId || pickDefaultAssignee(members);
+    if (!assignee) {
+      setMsg("⚠️ No hay usuario asignable. Crea/añade un miembro al terreno.");
+      return;
+    }
+    if (!assignedUserId) setAssignedUserId(assignee);
 
     setLoading(true);
     try {
       const from = toIsoStartOfDay(day);
       const to = toIsoEndOfDay(day);
-      const url = `/api/v1/availability?assignedUserId=${encodeURIComponent(assignedUserId)}&from=${encodeURIComponent(
+      const url = `/api/v1/availability?assignedUserId=${encodeURIComponent(assignee)}&from=${encodeURIComponent(
         from
       )}&to=${encodeURIComponent(to)}`;
 
@@ -120,10 +176,13 @@ export default function SchedulingPage() {
 
   async function createAppointment() {
     setMsg("");
-    if (!assignedUserId) {
-      setMsg("⚠️ Debes llenar assignedUserId.");
+
+    const assignee = assignedUserId || pickDefaultAssignee(members);
+    if (!assignee) {
+      setMsg("⚠️ No hay usuario asignable. Crea/añade un miembro al terreno.");
       return;
     }
+    if (!assignedUserId) setAssignedUserId(assignee);
 
     const startsAt = new Date(startsAtLocal);
     if (Number.isNaN(startsAt.getTime())) {
@@ -144,7 +203,7 @@ export default function SchedulingPage() {
     setLoading(true);
     try {
       const body: any = {
-        assignedUserId,
+        assignedUserId: assignee, // autoseleccionado
         startsAt: startsAt.toISOString(),
         ...(endsAt ? { endsAt: endsAt.toISOString() } : {}),
         ...(title ? { title } : {}),
@@ -188,6 +247,12 @@ export default function SchedulingPage() {
     }
   }
 
+  const assigneeLabel = useMemo(() => {
+    if (!assignedUserId) return membersLoading ? "Cargando miembros…" : "Sin asignado";
+    const m = members.find((x) => x.user_id === assignedUserId);
+    return m ? `${m.role} (${assignedUserId.slice(0, 8)}…)` : `${assignedUserId.slice(0, 8)}…`;
+  }, [assignedUserId, members, membersLoading]);
+
   return (
     <div style={{ maxWidth: 980 }}>
       <h1 style={{ marginTop: 0 }}>Scheduling</h1>
@@ -198,16 +263,13 @@ export default function SchedulingPage() {
           <input type="date" value={day} onChange={(e) => setDay(e.target.value)} />
         </div>
 
-        <div style={{ minWidth: 420 }}>
-          <label style={{ display: "block", fontSize: 12, color: "#555" }}>assignedUserId (temporal)</label>
-          <input
-            style={{ width: "100%" }}
-            placeholder="UUID del usuario asignado"
-            value={assignedUserId}
-            onChange={(e) => setAssignedUserId(e.target.value)}
-          />
+        <div style={{ minWidth: 320 }}>
+          <label style={{ display: "block", fontSize: 12, color: "#555" }}>Asignado</label>
+          <div style={{ fontSize: 13, color: "#333", padding: "6px 10px", border: "1px solid #ddd", borderRadius: 6 }}>
+            {assigneeLabel}
+          </div>
           <div style={{ fontSize: 12, color: "#777", marginTop: 4 }}>
-            Tip: por ahora puedes usar tu <code>auth.users.id</code>.
+            Se asigna automáticamente (agent/admin). Luego lo reemplazamos por dropdown con nombre/email.
           </div>
         </div>
 
