@@ -96,6 +96,8 @@ export default function SchedulingPage() {
       return;
     }
 
+    
+
     setLoading(true);
     try {
       const from = toIsoStartOfDay(day);

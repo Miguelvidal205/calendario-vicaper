@@ -30,6 +30,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
             <nav style={{ display: "flex", flexDirection: "column", gap: 8 }}>
               <a href="/dashboard/scheduling">Scheduling</a>
               <a href="/dashboard/onboarding">Onboarding</a>
+              <a href="/dashboard/api-keys">API Keys</a>
               <span style={{ color: "#777" }}>CRM (futuro)</span>
               <span style={{ color: "#777" }}>Lands (futuro)</span>
             </nav>

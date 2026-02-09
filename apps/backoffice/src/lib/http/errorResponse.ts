@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { AppError } from "@vicaper/domain";
 import { ApiError } from "../terreno/activeTerreno";
+import { ApiKeyError } from "../apiKeys/requireApiKey";
 
 export function jsonError(err: unknown) {
   if (err instanceof ApiError) {
@@ -16,6 +17,13 @@ export function jsonError(err: unknown) {
     };
     if (err.details) (body.error as any).details = err.details;
     return NextResponse.json(body, { status: err.status });
+  }
+
+  if (err instanceof ApiKeyError) {
+    return NextResponse.json(
+      { error: { code: err.code, message: err.message } },
+      { status: err.status },
+    );
   }
 
   const message = err instanceof Error ? err.message : "Unknown error";
