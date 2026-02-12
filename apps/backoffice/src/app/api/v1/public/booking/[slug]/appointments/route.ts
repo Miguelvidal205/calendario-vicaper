@@ -3,6 +3,10 @@ import { z } from "zod";
 import { supabaseAdmin } from "@/lib/supabase/admin";
 import { jsonError } from "@/lib/http/errorResponse";
 import { sha256Hex } from "@/lib/publicBooking/bookingKey";
+import { EVENT_TYPES } from "@vicaper/events";
+// Asegúrate que tu path mapping en tsconfig permita esto, o usa ruta relativa si es necesario
+// Si falla el import, ajusta la ruta a donde guardaste el archivo anterior.
+import { DateUtils } from "@vicaper/contracts";
 
 const ParamsSchema = z.object({ slug: z.string().min(2).max(200) });
 
@@ -59,7 +63,7 @@ async function verifyOriginAllowed(
 ) {
   if (!host) return;
 
-  // DEV shortcut: permite localhost para no bloquear pruebas
+  // DEV shortcut
   if (process.env.NODE_ENV !== "production") {
     if (host.startsWith("localhost:") || host.startsWith("127.0.0.1:")) return;
   }
@@ -112,7 +116,6 @@ async function getSettings(
   admin: ReturnType<typeof supabaseAdmin>,
   terrenoId: string,
 ) {
-  // Usa solo working_hours (ya sabemos que existe en tu tabla)
   const { data, error } = await admin
     .from("terreno_booking_settings")
     .select("working_hours")
@@ -131,15 +134,16 @@ async function getSettings(
     sun: [],
   }) as WorkingHours;
 
-  // Por ahora fijo (luego lo conectamos a columna real)
-  const durationMin = 60;
+  const durationMin = 60; // TODO: Leer de settings si existe columna
 
   return { workingHours, durationMin };
 }
 
 function dayKeyFromDate(date: string): DayKey {
+  // OJO: Esto asume UTC date string simple, para sacar el día de la semana.
+  // Es "good enough" si la fecha viene YYYY-MM-DD.
   const d = new Date(`${date}T12:00:00.000Z`);
-  const dow = d.getUTCDay(); // 0..6
+  const dow = d.getUTCDay();
   const map: DayKey[] = ["sun", "mon", "tue", "wed", "thu", "fri", "sat"];
   return map[dow] ?? "mon";
 }
@@ -152,14 +156,6 @@ function parseHHMM(s: string): { h: number; m: number } {
 
 function minutes(h: number, m: number) {
   return h * 60 + m;
-}
-
-function pad2(n: number) {
-  return String(n).padStart(2, "0");
-}
-
-function naiveUtcIsoFromDateTime(date: string, hhmm: string) {
-  return new Date(`${date}T${hhmm}:00.000Z`).toISOString();
 }
 
 function isWithinWorkingHours(
@@ -188,10 +184,8 @@ async function resolveAssignee(
   admin: ReturnType<typeof supabaseAdmin>,
   terrenoId: string,
 ) {
-  // MVP: asigna al primer admin/agent del terreno
-  // Ajusta nombres de columnas si tu tabla difiere.
   const { data, error } = await admin
-    .from("terreno_members")
+    .from("terreno_member") // Ajustado a terreno_member según tu contexto anterior
     .select("user_id, role")
     .eq("terreno_id", terrenoId)
     .in("role", ["admin", "agent"])
@@ -233,29 +227,34 @@ export async function POST(
 
     const assignedUserId = await resolveAssignee(admin, terrenoId);
 
-    const startsAt = naiveUtcIsoFromDateTime(body.date, body.time);
-    const startMs = new Date(startsAt).getTime();
-    const endsAt = new Date(startMs + durationMin * 60_000).toISOString();
+    // --- CORRECCIÓN TIMEZONE (Usando DateUtils) ---
+    const startsAtDate = DateUtils.toUTC(body.date, body.time);
+    const startsAt = startsAtDate.toISOString();
 
-    const { data, error } = await admin
+    // Calcular fin sumando minutos al objeto Date
+    const endsAtDate = new Date(startsAtDate.getTime() + durationMin * 60_000);
+    const endsAt = endsAtDate.toISOString();
+
+    // 1. Insertar Appointment
+    const { data: appointment, error } = await admin
       .from("appointments")
       .insert({
         terreno_id: terrenoId,
         assigned_user_id: assignedUserId,
         status: "scheduled",
         title: "Visita",
-        visitor_name: body.visitorName, // ✅ Columna dedicada
-        visitor_email: body.visitorEmail || null, // ✅ Columna dedicada
-        visitor_phone: body.visitorPhone || null, // ✅ Columna dedicada
-        notes: body.notes || null, // ✅ Solo notas opcionales
+        visitor_name: body.visitorName,
+        visitor_email: body.visitorEmail || null,
+        visitor_phone: body.visitorPhone || null,
+        notes: body.notes || null,
         starts_at: startsAt,
         ends_at: endsAt,
+        origin_domain: originHost(req) || "unknown", // Agregamos tracking de origen si tienes la columna
       })
-      .select("id, starts_at, ends_at")
+      .select("id, starts_at, ends_at, terreno_id")
       .single();
 
     if (error) {
-      // Si tu constraint anti-overlap dispara, supabase devuelve error -> lo convertimos a 409-friendly
       const msg = String(error.message || "");
       if (
         msg.toLowerCase().includes("overlap") ||
@@ -269,11 +268,46 @@ export async function POST(
       throw new Error(error.message);
     }
 
+    // 2. Insertar Evento en Outbox
+    if (appointment) {
+      const payload = {
+        appointmentId: appointment.id,
+        terrenoId: appointment.terreno_id,
+        visitor: {
+          name: body.visitorName,
+          email: body.visitorEmail || "",
+          phone: body.visitorPhone || "",
+        },
+        schedule: {
+          startsAt: appointment.starts_at, // UTC Database
+          endsAt: appointment.ends_at, // UTC Database
+          date: body.date, // Input original usuario (YYYY-MM-DD)
+          time: body.time, // Input original usuario (HH:MM)
+        },
+        metadata: {
+          origin: originHost(req) || "unknown",
+        },
+      };
+
+      const { error: outboxError } = await admin.from("event_outbox").insert({
+        type: EVENT_TYPES.APPOINTMENT_CREATED,
+        payload: payload,
+        status: "pending",
+      });
+
+      if (outboxError) {
+        console.error(
+          "CRITICAL: Appointment created but Event Outbox failed",
+          outboxError,
+        );
+      }
+    }
+
     return NextResponse.json({
       ok: true,
-      appointmentId: data.id,
-      startsAt: new Date(data.starts_at).toISOString(),
-      endsAt: new Date(data.ends_at).toISOString(),
+      appointmentId: appointment.id,
+      startsAt: appointment.starts_at, // UTC
+      endsAt: appointment.ends_at, // UTC
       timezone: "America/Santiago",
     });
   } catch (e: any) {

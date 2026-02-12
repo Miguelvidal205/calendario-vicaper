@@ -1,23 +1,26 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { Logger } from "@vicaper/observability";
 import type { EventHandler, OutboxEventRow } from "../handlers/types";
-
-type DeliveryInsertResult = { id: string } | null;
+import { EVENT_TYPES, AppointmentCreatedPayload } from "../handlers/types";
+import { sendBookingEmailHandler } from "../handlers/sendBookingEmail";
 
 function backoffMinutes(attempts: number): number {
-  // attempts = #intentos ya hechos antes de este ciclo
-  // próxima espera: 1,2,5,10,30,60
+  // schedule: 1m, 2m, 5m, 10m, 30m, 60m
   const schedule = [1, 2, 5, 10, 30, 60];
   return schedule[Math.min(attempts, schedule.length - 1)] ?? 60;
 }
 
+/**
+ * Intenta insertar un registro en event_deliveries para asegurar idempotencia.
+ * Retorna true si se insertó (es la primera vez que se procesa para este handler),
+ * Retorna false si ya existía (ya se procesó).
+ */
 async function tryInsertDelivery(args: {
   client: SupabaseClient;
   eventId: string;
   handler: string;
   attempt: number;
 }): Promise<boolean> {
-  // Insert idempotente: unique(event_id, handler)
   const { error } = await args.client.from("event_deliveries").insert({
     event_id: args.eventId,
     handler: args.handler,
@@ -27,7 +30,7 @@ async function tryInsertDelivery(args: {
 
   if (!error) return true;
 
-  // Postgres unique_violation -> 23505
+  // Postgres unique_violation code
   const code = (error as any).code as string | undefined;
   if (code === "23505") return false;
 
@@ -55,7 +58,7 @@ export class OutboxProcessor {
   }): Promise<{ processed: number; delivered: number; failed: number }> {
     const nowIso = new Date().toISOString();
 
-    // 1) buscar candidatos listos
+    // 1) Buscar eventos pendientes
     const { data: rows, error: selErr } = await this.client
       .from("event_outbox")
       .select("*")
@@ -74,7 +77,7 @@ export class OutboxProcessor {
     let failed = 0;
 
     for (const ev of events) {
-      // 2) lock best-effort (si otro worker lo agarró, skip)
+      // 2) Lock optimista (Best-effort)
       const { data: locked, error: lockErr } = await this.client
         .from("event_outbox")
         .update({
@@ -95,12 +98,37 @@ export class OutboxProcessor {
         failed += 1;
         continue;
       }
-      if (!locked) continue; // alguien más lo lockeó
+
+      if (!locked) continue; // Otro worker lo tomó
 
       try {
-        const matching = this.handlers.filter((h) =>
-          h.canHandle(ev.event_type),
-        );
+        // --- PROCESAMIENTO DE HANDLERS ---
+
+        // Determinar qué "type" usar (dependiendo de tu DB puede ser 'type' o 'event_type')
+        // Asumimos 'type' basado en tu insert anterior, pero hacemos fallback.
+        const eventType = (ev as any).type || (ev as any).event_type;
+
+        // A) Handler Específico: Email de Booking
+        if (eventType === EVENT_TYPES.APPOINTMENT_CREATED) {
+          const handlerName = "sendBookingEmail";
+
+          // Chequeo de idempotencia para este handler específico
+          const shouldRun = await tryInsertDelivery({
+            client: this.client,
+            eventId: ev.id,
+            handler: handlerName,
+            attempt: ev.attempts + 1,
+          });
+
+          if (shouldRun) {
+            const payload = ev.payload as unknown as AppointmentCreatedPayload;
+            await sendBookingEmailHandler(payload);
+          }
+        }
+
+        // B) Handlers Genéricos (ej: Webhooks)
+        // Esto mantiene vivo tu sistema actual de handlers inyectados
+        const matching = this.handlers.filter((h) => h.canHandle(eventType));
 
         for (const handler of matching) {
           const inserted = await tryInsertDelivery({
@@ -110,15 +138,12 @@ export class OutboxProcessor {
             attempt: ev.attempts + 1,
           });
 
-          if (!inserted) {
-            // ya entregado para este handler => idempotencia
-            continue;
-          }
+          if (!inserted) continue; // Ya procesado por este handler
 
           await handler.handle({ event: ev });
         }
 
-        // 3) marcar delivered
+        // 3) Marcar como entregado (Solo si no hubo errores arriba)
         const { error: doneErr } = await this.client
           .from("event_outbox")
           .update({
@@ -126,7 +151,8 @@ export class OutboxProcessor {
             attempts: ev.attempts + 1,
             locked_at: null,
             locked_by: null,
-            next_retry_at: new Date().toISOString(),
+            next_retry_at: new Date().toISOString(), // Opcional: keep current time
+            processed_at: new Date().toISOString(),
           })
           .eq("id", ev.id);
 
@@ -134,16 +160,25 @@ export class OutboxProcessor {
 
         delivered += 1;
       } catch (err) {
+        // Manejo de Errores y Retry
         const minutes = backoffMinutes(ev.attempts);
         const next = new Date(Date.now() + minutes * 60 * 1000).toISOString();
         const message = err instanceof Error ? err.message : "unknown error";
 
-        // update delivery row to failed (si existía)
+        this.logger.error("outbox processing error", {
+          eventId: ev.id,
+          error: message,
+        });
+
+        // Actualizar el delivery a fallido (si se llegó a crear)
+        // Nota: esto es genérico, idealmente sabríamos cuál handler falló específicamente
         await this.client
           .from("event_deliveries")
           .update({ status: "failed", last_error: message })
-          .eq("event_id", ev.id);
+          .eq("event_id", ev.id)
+          .eq("attempt", ev.attempts + 1); // Solo el intento actual
 
+        // Marcar evento principal como fallido para retry
         const { error: failErr } = await this.client
           .from("event_outbox")
           .update({
@@ -152,6 +187,7 @@ export class OutboxProcessor {
             next_retry_at: next,
             locked_at: null,
             locked_by: null,
+            last_error: message,
           })
           .eq("id", ev.id);
 
@@ -162,11 +198,6 @@ export class OutboxProcessor {
           });
         }
 
-        this.logger.warn("outbox event failed", {
-          eventId: ev.id,
-          nextRetryAt: next,
-          error: message,
-        });
         failed += 1;
       }
     }

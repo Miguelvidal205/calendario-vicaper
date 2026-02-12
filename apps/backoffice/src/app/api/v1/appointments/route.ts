@@ -8,6 +8,7 @@ import { requireActiveTerrenoId } from "@/lib/terreno/activeTerreno";
 import { jsonError } from "@/lib/http/errorResponse";
 import { supabaseServer } from "@/lib/supabase/server";
 
+// Helper para el POST (Domain -> DTO)
 function toDto(a: {
   id: string;
   terrenoId: string;
@@ -36,6 +37,7 @@ function toDto(a: {
   };
 }
 
+// --- POST: Crear Cita (Interno / Backoffice) ---
 export async function POST(req: Request) {
   try {
     const sb = await supabaseServer();
@@ -68,6 +70,67 @@ export async function POST(req: Request) {
     });
 
     return NextResponse.json(response, { status: 201 });
+  } catch (err) {
+    return jsonError(err);
+  }
+}
+
+// --- GET: Listar Citas (Dashboard Admin) ---
+// Este endpoint alimenta la tabla de reservas que acabamos de hacer
+export async function GET(req: Request) {
+  try {
+    const sb = await supabaseServer();
+
+    // 1. Validar Auth y Terreno Activo
+    const { data: userRes, error: userErr } = await sb.auth.getUser();
+    if (userErr || !userRes.user) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
+
+    const terrenoId = await requireActiveTerrenoId();
+
+    // 2. Parsear Query Params (Filtros opcionales)
+    const url = new URL(req.url);
+    const date = url.searchParams.get("date"); // YYYY-MM-DD
+
+    // 3. Consultar a Supabase (Directo a DB para lectura eficiente de listas)
+    // Traemos las columnas nuevas de visitor_*
+    let query = sb
+      .from("appointments")
+      .select(
+        `
+        id, 
+        starts_at, 
+        ends_at, 
+        status, 
+        title, 
+        visitor_name, 
+        visitor_email, 
+        visitor_phone, 
+        notes,
+        created_at,
+        assigned_user_id
+      `,
+      )
+      .eq("terreno_id", terrenoId)
+      .order("starts_at", { ascending: false });
+
+    // Filtro por fecha (opcional)
+    if (date) {
+      // Rango de todo el día en UTC (simplificado)
+      query = query
+        .gte("starts_at", `${date}T00:00:00`)
+        .lte("starts_at", `${date}T23:59:59`);
+    } else {
+      // Si no hay fecha, limitamos a las últimas 50 para no saturar
+      query = query.limit(50);
+    }
+
+    const { data, error } = await query;
+
+    if (error) throw error;
+
+    return NextResponse.json({ appointments: data });
   } catch (err) {
     return jsonError(err);
   }
