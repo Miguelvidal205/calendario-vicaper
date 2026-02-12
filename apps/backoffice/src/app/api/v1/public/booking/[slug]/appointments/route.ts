@@ -191,7 +191,7 @@ async function resolveAssignee(
   // MVP: asigna al primer admin/agent del terreno
   // Ajusta nombres de columnas si tu tabla difiere.
   const { data, error } = await admin
-    .from("terreno_member")
+    .from("terreno_members")
     .select("user_id, role")
     .eq("terreno_id", terrenoId)
     .in("role", ["admin", "agent"])
@@ -237,13 +237,6 @@ export async function POST(
     const startMs = new Date(startsAt).getTime();
     const endsAt = new Date(startMs + durationMin * 60_000).toISOString();
 
-    // Guardamos datos de visitante en notes (MVP) para no depender de columnas nuevas
-    const visitorBlock = `📌 Booking\n- Nombre: ${body.visitorName}\n- Email: ${body.visitorEmail || "-"}\n- Tel: ${
-      body.visitorPhone || "-"
-    }\n`;
-    const combinedNotes =
-      `${visitorBlock}${body.notes ? `\n📝 Notas:\n${body.notes}\n` : ""}`.trim();
-
     const { data, error } = await admin
       .from("appointments")
       .insert({
@@ -251,7 +244,10 @@ export async function POST(
         assigned_user_id: assignedUserId,
         status: "scheduled",
         title: "Visita",
-        notes: combinedNotes,
+        visitor_name: body.visitorName, // ✅ Columna dedicada
+        visitor_email: body.visitorEmail || null, // ✅ Columna dedicada
+        visitor_phone: body.visitorPhone || null, // ✅ Columna dedicada
+        notes: body.notes || null, // ✅ Solo notas opcionales
         starts_at: startsAt,
         ends_at: endsAt,
       })
