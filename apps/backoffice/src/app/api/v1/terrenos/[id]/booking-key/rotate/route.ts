@@ -22,7 +22,7 @@ async function requireUser() {
 async function requireTerrenoAdmin(userId: string, terrenoId: string) {
   const sb = await supabaseServer();
   const { data, error } = await sb
-    .from("terreno_users")
+    .from("terreno_members")
     .select("role")
     .eq("terreno_id", terrenoId)
     .eq("user_id", userId)
