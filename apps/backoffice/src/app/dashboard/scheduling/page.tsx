@@ -4,7 +4,7 @@ import { useEffect, useMemo, useState, useCallback } from "react";
 import { Calendar, dateFnsLocalizer, Views, View } from "react-big-calendar";
 import { format, parse, startOfWeek, getDay, startOfMonth, endOfMonth, startOfDay, endOfDay } from "date-fns";
 import { es } from "date-fns/locale";
-import "react-big-calendar/lib/css/react-big-calendar.css"; // Importar estilos básicos
+import "react-big-calendar/lib/css/react-big-calendar.css"; 
 
 // --- Configuración del Localizer (date-fns) ---
 const locales = {
@@ -44,7 +44,7 @@ type CalendarEvent = {
   title: string;
   start: Date;
   end: Date;
-  resource: AppointmentDto; // Guardamos el objeto original aquí
+  resource: AppointmentDto; 
 };
 
 class RequestError extends Error {
@@ -138,7 +138,7 @@ export default function SchedulingPage() {
     return () => { cancelled = true; };
   }, []);
 
-  // --- LÓGICA DE CARGA DE CITAS (RANGO DINÁMICO) ---
+  // --- LÓGICA DE CARGA DE CITAS ---
   const fetchAppointments = useCallback(async (date: Date, view: View, userId: string) => {
     if (!userId) return;
     setLoading(true);
@@ -146,21 +146,16 @@ export default function SchedulingPage() {
     
     try {
       let from: Date, to: Date;
-
-      // Calcular rango según la vista actual
       if (view === Views.MONTH) {
         from = startOfMonth(date);
         to = endOfMonth(date);
-        // Expandir un poco para ver semanas completas en la grilla
-        from = startOfWeek(from, { weekStartsOn: 1 }); // Lunes
-        // to = endOfWeek(to, { weekStartsOn: 1 }); 
+        from = startOfWeek(from, { weekStartsOn: 1 }); 
       } else if (view === Views.WEEK) {
         from = startOfWeek(date, { weekStartsOn: 1 });
         const endWeek = new Date(from);
         endWeek.setDate(endWeek.getDate() + 7);
         to = endWeek;
       } else {
-        // DAY or AGENDA
         from = startOfDay(date);
         to = endOfDay(date);
       }
@@ -212,7 +207,6 @@ export default function SchedulingPage() {
 
       await jsonFetch("/api/v1/appointments", { method: "POST", body: JSON.stringify(body) });
       setMsg("✅ Cita creada.");
-      // Recargar calendario
       fetchAppointments(currentDate, view, assignee);
     } catch (e) {
       if (!handleNoActiveTerreno(e)) {
@@ -230,7 +224,6 @@ export default function SchedulingPage() {
             method: "POST",
             body: JSON.stringify({ status }),
         });
-        // Actualizar localmente para feedback rápido
         setAppointments(prev => prev.map(a => a.id === appointment.id ? { ...a, status } : a));
     } catch (e) {
         alert("Error actualizando status");
@@ -244,32 +237,33 @@ export default function SchedulingPage() {
       title: `${a.title || 'Cita'} (${a.status})`,
       start: new Date(a.startsAt),
       end: new Date(a.endsAt),
-      resource: a, // Para tener acceso a datos extra en el click
+      resource: a, 
     }));
   }, [appointments]);
 
   // Estilo condicional para eventos según status
   const eventStyleGetter = (event: CalendarEvent) => {
-    let backgroundColor = '#3174ad';
-    if (event.resource.status === 'completed') backgroundColor = '#10b981'; // Green
-    if (event.resource.status === 'no_show') backgroundColor = '#ef4444'; // Red
-    if (event.resource.status === 'cancelled') backgroundColor = '#6b7280'; // Gray
+    let backgroundColor = '#3b82f6'; // var(--primary) aprox
+    if (event.resource.status === 'completed') backgroundColor = '#10b981';
+    if (event.resource.status === 'no_show') backgroundColor = '#ef4444';
+    if (event.resource.status === 'cancelled') backgroundColor = '#94a3b8';
     
     return {
       style: {
         backgroundColor,
-        borderRadius: '4px',
-        opacity: 0.8,
+        borderRadius: '6px',
+        opacity: 0.9,
         color: 'white',
         border: '0px',
-        display: 'block'
+        display: 'block',
+        fontSize: '12px',
+        padding: '2px 6px'
       }
     };
   };
 
   const onSelectEvent = (event: CalendarEvent) => {
     const a = event.resource;
-    // Ejemplo: abrir un modal o mostrar detalles. Por ahora un alert simple.
     const action = prompt(
         `Cita: ${a.title}\nNotas: ${a.notes || '-'}\nStatus: ${a.status}\n\nEscribe 'completar' o 'noshow' para cambiar estado:`
     );
@@ -278,10 +272,8 @@ export default function SchedulingPage() {
   };
 
   const onSelectSlot = ({ start, end }: { start: Date, end: Date }) => {
-     // Al hacer click en un espacio vacío, pre-llenar el formulario de creación
      setStartsAtLocal(format(start, "yyyy-MM-dd'T'HH:mm"));
      setEndsAtLocal(format(end, "yyyy-MM-dd'T'HH:mm"));
-     // Scroll arriba al form
      window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
@@ -292,87 +284,189 @@ export default function SchedulingPage() {
     return m ? `${m.role}` : `...`;
   }, [assignedUserId, members, membersLoading]);
 
+  // --- STYLES (Clean UI) ---
+  const styles = {
+    container: {
+        minHeight: "100vh",
+        background: "#f8fafc", // Fondo claro
+        padding: "32px 24px",
+        fontFamily: "system-ui, -apple-system, sans-serif",
+    },
+    wrapper: {
+        maxWidth: "1200px",
+        margin: "0 auto",
+    },
+    header: {
+        display: "flex",
+        justifyContent: "space-between",
+        alignItems: "center",
+        marginBottom: "24px",
+    },
+    title: {
+        fontSize: "24px",
+        fontWeight: 700,
+        color: "#0f172a", // Slate 900
+    },
+    controlGroup: {
+        display: "flex",
+        gap: "12px",
+        alignItems: "center",
+        background: "#fff",
+        padding: "6px 12px",
+        borderRadius: "10px",
+        border: "1px solid #e2e8f0",
+        boxShadow: "0 1px 2px 0 rgba(0,0,0,0.05)",
+    },
+    select: {
+        padding: "8px 12px",
+        borderRadius: "8px",
+        border: "1px solid #cbd5e1",
+        background: "#f8fafc",
+        color: "#334155",
+        fontSize: "14px",
+        outline: "none",
+        cursor: "pointer",
+    },
+    card: {
+        background: "#ffffff",
+        border: "1px solid #e2e8f0",
+        borderRadius: "16px",
+        padding: "24px",
+        marginBottom: "24px",
+        boxShadow: "0 1px 3px 0 rgba(0, 0, 0, 0.05)",
+    },
+    inputGroup: {
+        display: "flex",
+        gap: "16px",
+        flexWrap: "wrap" as const,
+        alignItems: "flex-end",
+    },
+    inputLabel: {
+        fontSize: "13px",
+        fontWeight: 600,
+        color: "#475569", // Slate 600
+        marginBottom: "6px",
+        display: "block",
+    },
+    input: {
+        padding: "10px 12px",
+        borderRadius: "8px",
+        border: "1px solid #e2e8f0",
+        fontSize: "14px",
+        color: "#1e293b",
+        width: "100%",
+        minWidth: "180px",
+        backgroundColor: "#fff",
+        boxSizing: "border-box" as const,
+    },
+    buttonPrimary: {
+        background: "#2563eb", // Blue 600
+        color: "white",
+        border: "none",
+        padding: "10px 20px",
+        borderRadius: "8px",
+        cursor: "pointer",
+        fontWeight: 600,
+        fontSize: "14px",
+        transition: "background 0.2s",
+        height: "42px",
+        boxShadow: "0 1px 2px 0 rgba(37, 99, 235, 0.3)",
+    },
+    msg: {
+        padding: "12px 16px",
+        marginBottom: "20px",
+        borderRadius: "8px",
+        fontSize: "14px",
+        fontWeight: 500,
+    }
+  };
+
   return (
-    <div style={{ maxWidth: 1200, margin: "0 auto", paddingBottom: 40 }}>
-      
-      {/* HEADER DE CONTROL */}
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 20 }}>
-        <h1 style={{ margin: 0 }}>Agenda</h1>
-        <div style={{ display: "flex", gap: 10, alignItems: "center" }}>
-           <div style={{ fontSize: 13 }}>Viendo agenda de: <b>{assigneeLabel}</b></div>
-           <select 
-             value={assignedUserId} 
-             onChange={e => setAssignedUserId(e.target.value)}
-             style={{ padding: 5, borderRadius: 4, border: '1px solid #ccc' }}
-           >
-             {members.map(m => (
-                 <option key={m.user_id} value={m.user_id}>{m.role} ({m.user_id.slice(0,4)}...)</option>
-             ))}
-           </select>
+    <div className="ui-page-container">
+      <div className="ui-wrapper">
+        
+        {/* HEADER */}
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 24 }}>
+            <h1 className="ui-title">Calendario de Visitas</h1>
+            
+            <div className="ui-card" style={{ padding: "8px 16px", marginBottom: 0, display: "flex", alignItems: "center", gap: 12 }}>
+                <span className="ui-label" style={{ marginBottom: 0 }}>Asignado a:</span>
+                <select 
+                    value={assignedUserId} 
+                    onChange={e => setAssignedUserId(e.target.value)}
+                    className="ui-select"
+                    style={{ width: "auto", padding: "6px 12px" }}
+                >
+                    {members.map(m => (
+                        <option key={m.user_id} value={m.user_id}>{m.role.toUpperCase()} ({m.user_id.slice(0,4)}...)</option>
+                    ))}
+                </select>
+            </div>
         </div>
-      </div>
 
-      {msg && <div style={{ padding: 10, background: "#f3f4f6", border: "1px solid #e5e7eb", marginBottom: 15, borderRadius: 6 }}>{msg}</div>}
+        {msg && (
+            <div className={`ui-feedback ${msg.includes("✅") ? "success" : "error"}`}>
+                {msg}
+            </div>
+        )}
 
-      {/* FORMULARIO RÁPIDO (Collapsible o en el tope) */}
-      <div style={{ background: "#f9fafb", border: "1px solid #e5e7eb", padding: 15, borderRadius: 8, marginBottom: 24 }}>
-         <h3 style={{ margin: "0 0 10px 0", fontSize: 16 }}>Nueva Cita</h3>
-         <div style={{ display: "flex", gap: 10, flexWrap: "wrap", alignItems: "flex-end" }}>
-            <div>
-               <label style={{ fontSize: 12, display: "block", marginBottom: 4 }}>Inicio</label>
-               <input type="datetime-local" value={startsAtLocal} onChange={e => setStartsAtLocal(e.target.value)} style={{ padding: 6, border: '1px solid #ccc', borderRadius: 4 }} />
+        {/* FORMULARIO RÁPIDO */}
+        <div className="ui-card">
+            <div style={{ display: "flex", alignItems: "center", marginBottom: "16px" }}>
+                <div style={{ width: "4px", height: "20px", background: "var(--primary)", borderRadius: "2px", marginRight: "10px" }}></div>
+                <h3 className="ui-subtitle" style={{ margin: 0 }}>Agendar Nueva Cita</h3>
             </div>
-            <div>
-               <label style={{ fontSize: 12, display: "block", marginBottom: 4 }}>Fin (Opcional)</label>
-               <input type="datetime-local" value={endsAtLocal} onChange={e => setEndsAtLocal(e.target.value)} style={{ padding: 6, border: '1px solid #ccc', borderRadius: 4 }} />
+            
+            <div style={{ display: "flex", gap: "16px", flexWrap: "wrap", alignItems: "flex-end" }}>
+                <div style={{ flex: 1, minWidth: "200px" }}>
+                    <label className="ui-label">Fecha de Inicio</label>
+                    <input type="datetime-local" value={startsAtLocal} onChange={e => setStartsAtLocal(e.target.value)} className="ui-input" />
+                </div>
+                <div style={{ flex: 1, minWidth: "200px" }}>
+                    <label className="ui-label">Fecha de Fin <span style={{fontWeight: 400, opacity: 0.7}}>(opcional)</span></label>
+                    <input type="datetime-local" value={endsAtLocal} onChange={e => setEndsAtLocal(e.target.value)} className="ui-input" />
+                </div>
+                <div style={{ flex: 2, minWidth: "250px" }}>
+                    <label className="ui-label">Título</label>
+                    <input type="text" value={title} onChange={e => setTitle(e.target.value)} placeholder="Ej: Visita Cliente..." className="ui-input" />
+                </div>
+                <button 
+                    onClick={createAppointment} 
+                    disabled={loading}
+                    className="ui-btn ui-btn-primary"
+                    style={{ height: "42px" }}
+                >
+                    {loading ? "Procesando..." : "+ Crear Evento"}
+                </button>
             </div>
-            <div>
-               <label style={{ fontSize: 12, display: "block", marginBottom: 4 }}>Título</label>
-               <input type="text" value={title} onChange={e => setTitle(e.target.value)} style={{ padding: 6, border: '1px solid #ccc', borderRadius: 4, width: 150 }} />
-            </div>
-            <button 
-              onClick={createAppointment} 
-              disabled={loading}
-              style={{ background: "#2563eb", color: "white", border: "none", padding: "8px 16px", borderRadius: 4, cursor: "pointer", height: 34 }}
-            >
-              {loading ? "..." : "Crear Cita"}
-            </button>
-         </div>
-      </div>
+        </div>
 
-      {/* CALENDARIO PRINCIPAL */}
-      <div style={{ height: 600, background: "white", padding: 20, borderRadius: 12, boxShadow: "0 1px 3px 0 rgba(0,0,0,0.1)" }}>
-        <Calendar
-          localizer={localizer}
-          events={events}
-          startAccessor="start"
-          endAccessor="end"
-          style={{ height: "100%" }}
-          view={view} // Vista actual (Month, Week, Day)
-          onView={setView} // Cambiar vista
-          date={currentDate} // Fecha actual visible
-          onNavigate={setCurrentDate} // Navegar (Next, Prev, Today)
-          eventPropGetter={eventStyleGetter}
-          onSelectEvent={onSelectEvent}
-          onSelectSlot={onSelectSlot}
-          selectable
-          messages={{
-            next: "Sig",
-            previous: "Ant",
-            today: "Hoy",
-            month: "Mes",
-            week: "Semana",
-            day: "Día",
-            agenda: "Agenda",
-            date: "Fecha",
-            time: "Hora",
-            event: "Evento",
-            noEventsInRange: "Sin citas en este rango"
-          }}
-          culture="es" // Forzar español (requiere localizer configurado arriba)
-        />
+        {/* CALENDARIO */}
+        <div className="ui-card" style={{ height: "700px", padding: 20 }}>
+            <Calendar
+                localizer={localizer}
+                events={events}
+                startAccessor="start"
+                endAccessor="end"
+                style={{ height: "100%" }}
+                view={view}
+                onView={setView}
+                date={currentDate}
+                onNavigate={setCurrentDate}
+                eventPropGetter={eventStyleGetter}
+                onSelectEvent={onSelectEvent}
+                onSelectSlot={onSelectSlot}
+                selectable
+                messages={{
+                    next: "Sig", previous: "Ant", today: "Hoy", month: "Mes",
+                    week: "Semana", day: "Día", agenda: "Agenda", date: "Fecha",
+                    time: "Hora", event: "Evento", noEventsInRange: "Sin citas"
+                }}
+                culture="es"
+            />
+        </div>
+
       </div>
-      
     </div>
   );
 }
