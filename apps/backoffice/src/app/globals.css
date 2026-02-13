@@ -1,32 +1,36 @@
-/* src/app/globals.css */
-
 :root {
-  /* --- Paleta de Colores (Slate & Blue Moderno) --- */
-  --bg-page: #f8fafc; /* Slate 50 */
-  --bg-card: #ffffff; /* White */
+  /* --- Paleta Vicaper (Black & Gold) --- */
+  --bg-page: #f8fafc; /* Fondo gris muy claro para la página */
+  --bg-card: #ffffff; /* Blanco puro para tarjetas */
 
-  --primary: #2563eb; /* Blue 600 */
-  --primary-hover: #1d4ed8; /* Blue 700 */
-  --primary-light: #eff6ff; /* Blue 50 */
+  /* EL DORADO (Tu nuevo color primario) */
+  --primary: #fbbf24; /* Un dorado vibrante (Amber-400 aprox) */
+  --primary-hover: #d97706; /* Dorado más oscuro para hover (Amber-600) */
+  --primary-light: #fffbeb; /* Un amarillo muy pálido para fondos sutiles */
 
-  --text-main: #0f172a; /* Slate 900 */
-  --text-secondary: #334155; /* Slate 700 */
-  --text-muted: #64748b; /* Slate 500 */
+  /* Textos */
+  --text-main: #0f172a; /* Negro/Gris muy oscuro (Slate 900) */
+  --text-secondary: #334155; /* Gris medio (Slate 700) */
+  --text-muted: #64748b; /* Gris suave (Slate 500) */
+  --text-on-primary: #1e1b4b; /* Azul muy oscuro o Negro para texto sobre el botón dorado */
 
-  --border-color: #e2e8f0; /* Slate 200 */
+  --border-color: #e2e8f0; /* Bordes suaves */
   --border-radius: 12px;
 
   --shadow-sm: 0 1px 2px 0 rgba(0, 0, 0, 0.05);
   --shadow-md: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
 
-  /* Status Colors */
+  /* Status Colors (Mantenemos semántica pero ajustada) */
   --success-bg: #f0fdf4;
   --success-text: #166534;
   --error-bg: #fef2f2;
   --error-text: #991b1b;
+  /* Status Scheduled ahora será Dorado en lugar de Azul */
+  --scheduled-bg: #fffbeb;
+  --scheduled-text: #b45309;
 }
 
-/* --- Reset Básico (ya lo tenías) --- */
+/* --- Reset Básico --- */
 html,
 body {
   max-width: 100vw;
@@ -76,8 +80,9 @@ a {
 /* Tipografía */
 .ui-title {
   font-size: 24px;
-  font-weight: 700;
+  font-weight: 800; /* Un poco más grueso como el logo Vicaper */
   color: var(--text-main);
+  letter-spacing: -0.5px;
 }
 
 .ui-subtitle {
@@ -102,24 +107,27 @@ a {
   justify-content: center;
   padding: 10px 20px;
   border-radius: 8px;
-  font-weight: 600;
+  font-weight: 700;
   font-size: 14px;
   cursor: pointer;
   transition: all 0.2s ease;
   border: none;
 }
 
+/* Botón Primario: DORADO con texto OSCURO */
 .ui-btn-primary {
   background-color: var(--primary);
-  color: white;
-  box-shadow: 0 1px 2px rgba(37, 99, 235, 0.3);
+  color: var(--text-on-primary);
+  box-shadow: 0 1px 2px rgba(251, 191, 36, 0.4); /* Sombra dorada */
 }
 
 .ui-btn-primary:hover {
   background-color: var(--primary-hover);
+  color: white; /* Al oscurecerse el dorado, pasamos a texto blanco */
 }
+
 .ui-btn-primary:disabled {
-  opacity: 0.7;
+  opacity: 0.6;
   cursor: not-allowed;
 }
 
@@ -140,7 +148,7 @@ a {
 
 .ui-input:focus,
 .ui-select:focus {
-  border-color: var(--primary);
+  border-color: var(--primary); /* Borde dorado al enfocar */
   box-shadow: 0 0 0 3px var(--primary-light);
 }
 
@@ -163,16 +171,138 @@ a {
   border: 1px solid #fecaca;
 }
 
-/* --- OVERRIDES PARA REACT BIG CALENDAR (Global) --- */
+/* --- MODAL & OVERLAYS --- */
+.ui-modal-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background-color: rgba(15, 23, 42, 0.7); /* Fondo más oscuro para resaltar */
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 9999;
+  backdrop-filter: blur(4px);
+  animation: fadeIn 0.2s ease-out;
+}
+
+.ui-modal-content {
+  background-color: var(--bg-card);
+  width: 100%;
+  max-width: 500px;
+  border-radius: 16px;
+  border: 1px solid var(--border-color);
+  box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.25);
+  padding: 0;
+  overflow: hidden;
+  animation: slideUp 0.2s ease-out;
+}
+
+.ui-modal-header {
+  padding: 20px 24px;
+  border-bottom: 1px solid var(--border-color);
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  background-color: #ffffff;
+}
+
+.ui-modal-body {
+  padding: 24px;
+}
+
+.ui-modal-footer {
+  padding: 16px 24px;
+  background-color: #f8fafc;
+  border-top: 1px solid var(--border-color);
+  display: flex;
+  justify-content: flex-end;
+  gap: 12px;
+}
+
+.ui-detail-row {
+  display: flex;
+  justify-content: space-between;
+  margin-bottom: 12px;
+  font-size: 14px;
+  border-bottom: 1px dashed #f1f5f9;
+  padding-bottom: 8px;
+}
+.ui-detail-row:last-child {
+  border-bottom: none;
+}
+.ui-detail-label {
+  color: var(--text-muted);
+  font-weight: 500;
+}
+.ui-detail-value {
+  color: var(--text-main);
+  font-weight: 600;
+  text-align: right;
+}
+
+/* Badges de estado actualizados */
+.ui-badge {
+  padding: 4px 12px;
+  border-radius: 99px;
+  font-size: 12px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+/* Scheduled ahora usa la paleta Vicaper (Dorado) */
+.ui-badge.scheduled {
+  background: var(--scheduled-bg);
+  color: var(--scheduled-text);
+  border: 1px solid #fcd34d;
+}
+.ui-badge.completed {
+  background: var(--success-bg);
+  color: var(--success-text);
+  border: 1px solid #bbf7d0;
+}
+.ui-badge.no_show {
+  background: var(--error-bg);
+  color: var(--error-text);
+  border: 1px solid #fecaca;
+}
+.ui-badge.cancelled {
+  background: #f1f5f9;
+  color: #64748b;
+  border: 1px solid #e2e8f0;
+}
+
+/* Animaciones */
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+@keyframes slideUp {
+  from {
+    transform: translateY(10px);
+    opacity: 0;
+  }
+  to {
+    transform: translateY(0);
+    opacity: 1;
+  }
+}
+
+/* --- OVERRIDES PARA REACT BIG CALENDAR (Tema Vicaper) --- */
 .rbc-calendar {
   font-family: inherit;
 }
 .rbc-header {
   padding: 12px 0 !important;
-  font-weight: 600;
-  color: var(--text-muted);
+  font-weight: 700;
+  color: var(--text-main); /* Encabezados más oscuros */
   font-size: 13px;
-  border-bottom: 1px solid var(--border-color) !important;
+  border-bottom: 2px solid var(--primary) !important; /* Línea dorada bajo los días */
 }
 .rbc-month-view {
   border: 1px solid var(--border-color) !important;
@@ -186,25 +316,40 @@ a {
 .rbc-off-range-bg {
   background: #f8fafc !important;
 }
+
+/* El día "HOY" ahora es un amarillo muy suave */
 .rbc-today {
   background: var(--primary-light) !important;
 }
+
+/* Toolbar */
 .rbc-toolbar {
-  margin-bottom: 20px !important;
+  margin-bottom: 24px !important;
 }
 .rbc-toolbar button {
   border: 1px solid var(--border-color) !important;
-  color: var(--text-muted);
+  color: var(--text-secondary);
   padding: 8px 16px !important;
   border-radius: 6px !important;
   font-size: 13px;
+  font-weight: 600;
 }
 .rbc-toolbar button.rbc-active {
-  background-color: var(--border-color) !important;
-  color: var(--text-main);
+  background-color: var(
+    --text-main
+  ) !important; /* Botón activo NEGRO (Vicaper) */
+  color: #fff !important;
+  border-color: var(--text-main) !important;
   box-shadow: none !important;
 }
+.rbc-toolbar button:hover {
+  background-color: #f1f5f9;
+}
+
+/* Eventos en el calendario */
 .rbc-event {
-  border-radius: 6px !important;
+  border-radius: 4px !important;
   box-shadow: 0 1px 2px rgba(0, 0, 0, 0.1);
+  font-weight: 600;
+  font-size: 12px !important;
 }

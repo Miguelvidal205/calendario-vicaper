@@ -18,7 +18,7 @@ const localizer = dateFnsLocalizer({
   locales,
 });
 
-// --- Tipos existentes ---
+// --- Tipos de Datos ---
 type AppointmentDto = {
   id: string;
   terrenoId: string;
@@ -47,6 +47,7 @@ type CalendarEvent = {
   resource: AppointmentDto; 
 };
 
+// --- Helpers de Fetch ---
 class RequestError extends Error {
   constructor(public code: string, message: string) {
     super(message);
@@ -88,34 +89,36 @@ function pickDefaultAssignee(members: MemberDto[]): string {
   if (agent) return agent;
   const admin = members.find((m) => m.role === "admin")?.user_id;
   if (admin) return admin;
-  const installer = members.find((m) => m.role === "installer")?.user_id;
-  if (installer) return installer;
   return members[0]?.user_id ?? "";
 }
 
+// --- COMPONENTE PRINCIPAL ---
 export default function SchedulingPage() {
   // Estado para creación rápida
   const todayLocal = useMemo(() => new Date().toISOString().slice(0, 10), []);
   const [startsAtLocal, setStartsAtLocal] = useState<string>(() => `${todayLocal}T10:00`);
   const [endsAtLocal, setEndsAtLocal] = useState<string>("");
   const [title, setTitle] = useState<string>("Visita");
-  const [notes, setNotes] = useState<string>("");
+  const [notes, setNotes] = useState<string>(""); // Notas al crear (opcional)
 
-  // Estado global
+  // Estado global UI
   const [msg, setMsg] = useState<string>("");
   const [loading, setLoading] = useState(false);
 
-  // Miembros
+  // Datos del Negocio
   const [members, setMembers] = useState<MemberDto[]>([]);
   const [assignedUserId, setAssignedUserId] = useState<string>("");
   const [membersLoading, setMembersLoading] = useState(false);
 
-  // --- ESTADO DEL CALENDARIO ---
+  // Estado del Calendario
   const [view, setView] = useState<View>(Views.MONTH);
   const [currentDate, setCurrentDate] = useState(new Date());
   const [appointments, setAppointments] = useState<AppointmentDto[]>([]);
+  
+  // Estado del Modal
+  const [selectedAppointment, setSelectedAppointment] = useState<AppointmentDto | null>(null);
 
-  // Cargar miembros al inicio
+  // 1. Cargar miembros al inicio
   useEffect(() => {
     let cancelled = false;
     async function loadMembers() {
@@ -138,7 +141,7 @@ export default function SchedulingPage() {
     return () => { cancelled = true; };
   }, []);
 
-  // --- LÓGICA DE CARGA DE CITAS ---
+  // 2. Fetch Citas (Dinámico por rango)
   const fetchAppointments = useCallback(async (date: Date, view: View, userId: string) => {
     if (!userId) return;
     setLoading(true);
@@ -173,7 +176,6 @@ export default function SchedulingPage() {
     }
   }, []);
 
-  // Recargar cuando cambia la fecha, vista o usuario asignado
   useEffect(() => {
     if (assignedUserId) {
       fetchAppointments(currentDate, view, assignedUserId);
@@ -181,14 +183,14 @@ export default function SchedulingPage() {
   }, [currentDate, view, assignedUserId, fetchAppointments]);
 
 
-  // --- ACCIONES ---
+  // 3. Crear Cita
   async function createAppointment() {
     setMsg("");
     const assignee = assignedUserId || pickDefaultAssignee(members);
     if (!assignee) return setMsg("⚠️ No hay usuario asignable.");
 
     const startsAt = new Date(startsAtLocal);
-    if (Number.isNaN(startsAt.getTime())) return setMsg("⚠️ startsAt inválido.");
+    if (Number.isNaN(startsAt.getTime())) return setMsg("⚠️ Fecha de inicio inválida.");
 
     let endsAt: Date | null = null;
     if (endsAtLocal.trim()) {
@@ -206,8 +208,11 @@ export default function SchedulingPage() {
       };
 
       await jsonFetch("/api/v1/appointments", { method: "POST", body: JSON.stringify(body) });
-      setMsg("✅ Cita creada.");
+      setMsg("✅ Cita creada correctamente.");
       fetchAppointments(currentDate, view, assignee);
+      // Limpiar un poco el form
+      setTitle("Visita");
+      setNotes("");
     } catch (e) {
       if (!handleNoActiveTerreno(e)) {
          setMsg(`❌ Error creando cita`);
@@ -217,36 +222,42 @@ export default function SchedulingPage() {
     }
   }
 
+  // 4. Marcar Asistencia (Desde el Modal)
   async function markAttendance(appointment: AppointmentDto, status: "completed" | "no_show") {
-    if (!confirm(`¿Marcar como ${status}?`)) return;
     try {
         await jsonFetch(`/api/v1/appointments/${encodeURIComponent(appointment.id)}/attendance`, {
             method: "POST",
             body: JSON.stringify({ status }),
         });
+        
+        // Actualizar lista local del calendario
         setAppointments(prev => prev.map(a => a.id === appointment.id ? { ...a, status } : a));
+        
+        // Actualizar estado del modal para ver el cambio instantáneo
+        setSelectedAppointment(prev => prev ? { ...prev, status } : null);
+        
     } catch (e) {
-        alert("Error actualizando status");
+        alert("Error de conexión al actualizar el estado.");
     }
   }
 
-  // --- MAPEO DE EVENTOS PARA BIG CALENDAR ---
+  // --- Helpers del Calendario ---
   const events: CalendarEvent[] = useMemo(() => {
     return appointments.map(a => ({
       id: a.id,
-      title: `${a.title || 'Cita'} (${a.status})`,
+      title: `${a.title || 'Cita'}`, // El status ya se ve por color
       start: new Date(a.startsAt),
       end: new Date(a.endsAt),
       resource: a, 
     }));
   }, [appointments]);
 
-  // Estilo condicional para eventos según status
   const eventStyleGetter = (event: CalendarEvent) => {
-    let backgroundColor = '#3b82f6'; // var(--primary) aprox
-    if (event.resource.status === 'completed') backgroundColor = '#10b981';
-    if (event.resource.status === 'no_show') backgroundColor = '#ef4444';
-    if (event.resource.status === 'cancelled') backgroundColor = '#94a3b8';
+    let backgroundColor = 'var(--primary)'; // Default Blue
+    // Colores hardcodeados o variables CSS si prefieres
+    if (event.resource.status === 'completed') backgroundColor = '#10b981'; // Green
+    if (event.resource.status === 'no_show') backgroundColor = '#ef4444'; // Red
+    if (event.resource.status === 'cancelled') backgroundColor = '#94a3b8'; // Gray
     
     return {
       style: {
@@ -257,18 +268,14 @@ export default function SchedulingPage() {
         border: '0px',
         display: 'block',
         fontSize: '12px',
-        padding: '2px 6px'
+        padding: '2px 6px',
+        boxShadow: '0 1px 2px rgba(0,0,0,0.1)'
       }
     };
   };
 
   const onSelectEvent = (event: CalendarEvent) => {
-    const a = event.resource;
-    const action = prompt(
-        `Cita: ${a.title}\nNotas: ${a.notes || '-'}\nStatus: ${a.status}\n\nEscribe 'completar' o 'noshow' para cambiar estado:`
-    );
-    if (action === 'completar') markAttendance(a, 'completed');
-    if (action === 'noshow') markAttendance(a, 'no_show');
+    setSelectedAppointment(event.resource);
   };
 
   const onSelectSlot = ({ start, end }: { start: Date, end: Date }) => {
@@ -278,109 +285,7 @@ export default function SchedulingPage() {
   };
 
 
-  const assigneeLabel = useMemo(() => {
-    if (!assignedUserId) return membersLoading ? "Cargando..." : "Sin asignado";
-    const m = members.find((x) => x.user_id === assignedUserId);
-    return m ? `${m.role}` : `...`;
-  }, [assignedUserId, members, membersLoading]);
-
-  // --- STYLES (Clean UI) ---
-  const styles = {
-    container: {
-        minHeight: "100vh",
-        background: "#f8fafc", // Fondo claro
-        padding: "32px 24px",
-        fontFamily: "system-ui, -apple-system, sans-serif",
-    },
-    wrapper: {
-        maxWidth: "1200px",
-        margin: "0 auto",
-    },
-    header: {
-        display: "flex",
-        justifyContent: "space-between",
-        alignItems: "center",
-        marginBottom: "24px",
-    },
-    title: {
-        fontSize: "24px",
-        fontWeight: 700,
-        color: "#0f172a", // Slate 900
-    },
-    controlGroup: {
-        display: "flex",
-        gap: "12px",
-        alignItems: "center",
-        background: "#fff",
-        padding: "6px 12px",
-        borderRadius: "10px",
-        border: "1px solid #e2e8f0",
-        boxShadow: "0 1px 2px 0 rgba(0,0,0,0.05)",
-    },
-    select: {
-        padding: "8px 12px",
-        borderRadius: "8px",
-        border: "1px solid #cbd5e1",
-        background: "#f8fafc",
-        color: "#334155",
-        fontSize: "14px",
-        outline: "none",
-        cursor: "pointer",
-    },
-    card: {
-        background: "#ffffff",
-        border: "1px solid #e2e8f0",
-        borderRadius: "16px",
-        padding: "24px",
-        marginBottom: "24px",
-        boxShadow: "0 1px 3px 0 rgba(0, 0, 0, 0.05)",
-    },
-    inputGroup: {
-        display: "flex",
-        gap: "16px",
-        flexWrap: "wrap" as const,
-        alignItems: "flex-end",
-    },
-    inputLabel: {
-        fontSize: "13px",
-        fontWeight: 600,
-        color: "#475569", // Slate 600
-        marginBottom: "6px",
-        display: "block",
-    },
-    input: {
-        padding: "10px 12px",
-        borderRadius: "8px",
-        border: "1px solid #e2e8f0",
-        fontSize: "14px",
-        color: "#1e293b",
-        width: "100%",
-        minWidth: "180px",
-        backgroundColor: "#fff",
-        boxSizing: "border-box" as const,
-    },
-    buttonPrimary: {
-        background: "#2563eb", // Blue 600
-        color: "white",
-        border: "none",
-        padding: "10px 20px",
-        borderRadius: "8px",
-        cursor: "pointer",
-        fontWeight: 600,
-        fontSize: "14px",
-        transition: "background 0.2s",
-        height: "42px",
-        boxShadow: "0 1px 2px 0 rgba(37, 99, 235, 0.3)",
-    },
-    msg: {
-        padding: "12px 16px",
-        marginBottom: "20px",
-        borderRadius: "8px",
-        fontSize: "14px",
-        fontWeight: 500,
-    }
-  };
-
+  // --- RENDER ---
   return (
     <div className="ui-page-container">
       <div className="ui-wrapper">
@@ -418,12 +323,12 @@ export default function SchedulingPage() {
             </div>
             
             <div style={{ display: "flex", gap: "16px", flexWrap: "wrap", alignItems: "flex-end" }}>
-                <div style={{ flex: 1, minWidth: "200px" }}>
-                    <label className="ui-label">Fecha de Inicio</label>
+                <div style={{ flex: 1, minWidth: "180px" }}>
+                    <label className="ui-label">Inicio</label>
                     <input type="datetime-local" value={startsAtLocal} onChange={e => setStartsAtLocal(e.target.value)} className="ui-input" />
                 </div>
-                <div style={{ flex: 1, minWidth: "200px" }}>
-                    <label className="ui-label">Fecha de Fin <span style={{fontWeight: 400, opacity: 0.7}}>(opcional)</span></label>
+                <div style={{ flex: 1, minWidth: "180px" }}>
+                    <label className="ui-label">Fin <span style={{fontWeight: 400, opacity: 0.7}}>(opcional)</span></label>
                     <input type="datetime-local" value={endsAtLocal} onChange={e => setEndsAtLocal(e.target.value)} className="ui-input" />
                 </div>
                 <div style={{ flex: 2, minWidth: "250px" }}>
@@ -436,7 +341,7 @@ export default function SchedulingPage() {
                     className="ui-btn ui-btn-primary"
                     style={{ height: "42px" }}
                 >
-                    {loading ? "Procesando..." : "+ Crear Evento"}
+                    {loading ? "..." : "+ Crear Evento"}
                 </button>
             </div>
         </div>
@@ -465,8 +370,85 @@ export default function SchedulingPage() {
                 culture="es"
             />
         </div>
-
       </div>
+
+      {/* --- MODAL DE DETALLE --- */}
+      {selectedAppointment && (
+        <div className="ui-modal-overlay" onClick={() => setSelectedAppointment(null)}>
+          <div className="ui-modal-content" onClick={(e) => e.stopPropagation()}>
+            
+            {/* Modal Header */}
+            <div className="ui-modal-header">
+              <h3 className="ui-subtitle" style={{ margin: 0, fontSize: 18 }}>
+                Detalles de la Cita
+              </h3>
+              <button 
+                onClick={() => setSelectedAppointment(null)}
+                style={{ background: 'transparent', border: 'none', fontSize: 28, lineHeight: 0.5, cursor: 'pointer', color: 'var(--text-muted)' }}
+              >
+                &times;
+              </button>
+            </div>
+
+            {/* Modal Body */}
+            <div className="ui-modal-body">
+              {/* Badge de estado */}
+              <div style={{ display: 'flex', justifyContent: 'center', marginBottom: 24 }}>
+                 <span className={`ui-badge ${selectedAppointment.status}`} style={{ fontSize: 14, padding: "6px 16px" }}>
+                    {selectedAppointment.status === 'no_show' ? 'NO PRESENTADO' : selectedAppointment.status.replace('_', ' ')}
+                 </span>
+              </div>
+
+              <div className="ui-detail-row">
+                 <span className="ui-detail-label">Título:</span>
+                 <span className="ui-detail-value">{selectedAppointment.title || "Sin título"}</span>
+              </div>
+              
+              <div className="ui-detail-row">
+                 <span className="ui-detail-label">Horario:</span>
+                 <span className="ui-detail-value">
+                   {format(new Date(selectedAppointment.startsAt), "eeee d 'de' MMMM, HH:mm", { locale: es })}
+                 </span>
+              </div>
+
+              <div style={{ margin: "20px 0", borderTop: "1px dashed var(--border-color)" }}></div>
+
+              <h4 style={{ fontSize: 14, marginBottom: 8, color: 'var(--text-main)' }}>Notas / Info Visitante</h4>
+              <div style={{ background: "var(--bg-page)", padding: 16, borderRadius: 8, fontSize: 14, color: "var(--text-secondary)", lineHeight: 1.6, whiteSpace: "pre-wrap" }}>
+                 {selectedAppointment.notes || "No hay notas adicionales."}
+              </div>
+            </div>
+
+            {/* Modal Footer / Actions */}
+            <div className="ui-modal-footer">
+               {selectedAppointment.status === 'scheduled' ? (
+                 <>
+                    <button 
+                      onClick={() => markAttendance(selectedAppointment, 'no_show')}
+                      className="ui-btn"
+                      style={{ background: '#fee2e2', color: '#991b1b' }}
+                    >
+                      Marca Cancelada
+                    </button>
+                    <button 
+                      onClick={() => markAttendance(selectedAppointment, 'completed')}
+                      className="ui-btn"
+                      style={{ background: '#dcfce7', color: '#166534' }}
+                    >
+                      Marcar Completada
+                    </button>
+                 </>
+               ) : (
+                 <span style={{ fontSize: 13, color: 'var(--text-muted)', alignSelf: 'center', width: '100%', textAlign: 'center' }}>
+                   Esta cita ya está finalizada.
+                 </span>
+               )}
+            </div>
+
+          </div>
+        </div>
+      )}
+
     </div>
   );
 }

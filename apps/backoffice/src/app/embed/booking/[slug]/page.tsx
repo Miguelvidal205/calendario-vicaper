@@ -9,7 +9,6 @@ type TakenSlot = { id: string; startsAt: string; endsAt: string };
 
 // --- HELPERS DE FECHAS (Timezone Chile) ---
 
-// Formatea HH:MM (Chile) para mostrar en la UI y enviar al backend
 function fmtChileTime(iso: string) {
   const d = new Date(iso);
   return new Intl.DateTimeFormat("es-CL", {
@@ -20,9 +19,7 @@ function fmtChileTime(iso: string) {
   }).format(d);
 }
 
-// Formatea título del día seleccionado (Ej: Lunes 20 de Octubre)
 function fmtChileDateLabel(yyyyMmDd: string) {
-  // Truco: T12:00 evita problemas de rollovers de día al parsear
   const d = new Date(`${yyyyMmDd}T12:00:00`);
   return new Intl.DateTimeFormat("es-CL", {
     timeZone: "America/Santiago",
@@ -33,7 +30,6 @@ function fmtChileDateLabel(yyyyMmDd: string) {
   }).format(d);
 }
 
-// Obtiene el día actual en Chile YYYY-MM-DD
 function todayChileYMD() {
   const now = new Date();
   const parts = new Intl.DateTimeFormat("en-CA", {
@@ -109,11 +105,17 @@ export default function EmbedBookingPage() {
   const slug = params?.slug ?? "";
   const bookingKey = searchParams.get("key") ?? "";
 
-  // Estado del Calendario
+  // 1. Calcular HOY para validaciones
   const initialDay = useMemo(() => todayChileYMD(), []);
+  
+  // Estado del Calendario
   const [selectedDay, setSelectedDay] = useState(initialDay);
   const [monthUTC, setMonthUTC] = useState<Date>(() => startOfMonthUTC(initialDay));
   const monthGrid = useMemo(() => buildMonthGridUTC(monthUTC), [monthUTC]);
+
+  // VALIDACIÓN: ¿Podemos retroceder de mes?
+  const actualCurrentMonthStart = useMemo(() => startOfMonthUTC(initialDay), [initialDay]);
+  const canGoBack = monthUTC.getTime() > actualCurrentMonthStart.getTime();
 
   // Estado de Datos (Slots)
   const [available, setAvailable] = useState<Slot[]>([]);
@@ -142,10 +144,9 @@ export default function EmbedBookingPage() {
     }
     setLoading(true);
     setMsg("");
-    setPickedSlot(null); // Reset slot al cambiar día
+    setPickedSlot(null); 
     
     try {
-      // Fetch Paralelo
       const [resAvail, resTaken] = await Promise.all([
         fetch(`/api/v1/public/booking/${slug}/availability?date=${selectedDay}&key=${bookingKey}`),
         fetch(`/api/v1/public/booking/${slug}/taken?date=${selectedDay}&key=${bookingKey}`)
@@ -167,30 +168,30 @@ export default function EmbedBookingPage() {
     }
   }
 
-  // Sync del mes del calendario con el día seleccionado
+  // Sync del mes del calendario con el día seleccionado (solo si el usuario cambia drásticamente)
   useEffect(() => {
     const p = parseYMD(selectedDay);
     if (!p) return;
     const monthStart = new Date(Date.UTC(p.y, p.m - 1, 1));
+    // Solo cambiamos la vista si el día seleccionado está fuera de la vista actual
+    // (Opcional: puedes quitar esto si prefieres navegación manual estricta)
     if (monthStart.getTime() !== monthUTC.getTime()) setMonthUTC(monthStart);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedDay]);
 
   // Cargar datos al iniciar o cambiar día
   useEffect(() => {
     void reload();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [slug, selectedDay, bookingKey]);
 
   // Submit Reserva
   async function submitBooking() {
     setMsg("");
-    
-    // Validaciones Frontend
     if (!pickedSlot) return setMsg("Selecciona un horario disponible.");
     if (visitorName.trim().length < 3) return setMsg("Ingresa tu nombre completo.");
     if (!visitorEmail.includes("@")) return setMsg("Ingresa un email válido.");
     
-    // Extraer la hora "HH:MM" en zona horaria Chile desde el slot UTC
-    // Importante: Usamos fmtChileTime para asegurar que enviamos lo que el usuario VE
     const timeCH = fmtChileTime(pickedSlot.startsAt); 
 
     setSubmitting(true);
@@ -200,8 +201,8 @@ export default function EmbedBookingPage() {
         headers: { "content-type": "application/json" },
         body: JSON.stringify({
           bookingKey,
-          date: selectedDay, // YYYY-MM-DD
-          time: timeCH,      // HH:MM (Chile)
+          date: selectedDay,
+          time: timeCH,
           visitorName: visitorName.trim(),
           visitorEmail: visitorEmail.trim(),
           visitorPhone: visitorPhone.trim(),
@@ -216,7 +217,6 @@ export default function EmbedBookingPage() {
         throw new Error(j.message || "No se pudo agendar.");
       }
 
-      // Éxito
       setSuccessId(j.appointmentId);
       setMsgType("success");
       setMsg("Reserva confirmada exitosamente.");
@@ -224,7 +224,7 @@ export default function EmbedBookingPage() {
     } catch (e: any) {
       setMsgType("error");
       setMsg(e.message || "Error desconocido");
-      await reload(); // Refrescar para mostrar que se ocupó
+      await reload();
     } finally {
       setSubmitting(false);
     }
@@ -233,18 +233,18 @@ export default function EmbedBookingPage() {
   // --- RENDER SUCCESS ---
   if (successId) {
     return (
-      <div className="min-h-screen bg-white flex flex-col items-center justify-center p-6 text-center font-sans">
-        <div className="w-16 h-16 bg-green-100 text-green-600 rounded-full flex items-center justify-center mb-4">
-          <svg className="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" /></svg>
+      <div style={{ fontFamily: "system-ui, sans-serif", minHeight: "100vh", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", padding: 24, textAlign: "center", background: "#fff", color: "#1e293b" }}>
+        <div style={{ width: 64, height: 64, background: "#dcfce7", color: "#16a34a", borderRadius: "50%", display: "flex", alignItems: "center", justifyContent: "center", marginBottom: 16, fontSize: 32 }}>
+          ✓
         </div>
-        <h2 className="text-2xl font-bold text-slate-800 mb-2">¡Reserva Confirmada!</h2>
-        <p className="text-slate-600 mb-6">
+        <h2 style={{ fontSize: 24, fontWeight: 700, marginBottom: 8 }}>¡Reserva Confirmada!</h2>
+        <p style={{ color: "#475569", marginBottom: 24 }}>
           Te esperamos el <strong>{pickedDayLabel}</strong> a las <strong>{pickedSlot ? fmtChileTime(pickedSlot.startsAt) : ""} hrs</strong>.
         </p>
-        <p className="text-sm text-slate-400 mb-8">Hemos enviado los detalles a {visitorEmail}</p>
+        <p style={{ fontSize: 13, color: "#94a3b8", marginBottom: 32 }}>Hemos enviado los detalles a {visitorEmail}</p>
         <button 
           onClick={() => window.location.reload()} 
-          className="px-6 py-2 bg-blue-600 text-white rounded-lg font-semibold hover:bg-blue-700 transition"
+          style={{ padding: "10px 24px", background: "#2563eb", color: "white", borderRadius: 8, border: "none", fontWeight: 600, cursor: "pointer" }}
         >
           Agendar otra visita
         </button>
@@ -252,7 +252,6 @@ export default function EmbedBookingPage() {
     );
   }
 
-  // --- RENDER FORM ---
   const inputStyle = {
     padding: "10px 12px", borderRadius: "8px", border: "1px solid #e2e8f0",
     background: "#fff", color: "#1e293b", fontSize: "14px", width: "100%",
@@ -265,16 +264,33 @@ export default function EmbedBookingPage() {
         
         {/* Header */}
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 24 }}>
-          <div style={{ color: "#2563eb", fontWeight: 800, fontSize: 20 }}>VICAPER</div>
+          <div style={{ color: "#2563eb", fontWeight: 800, fontSize: 20 }}>EMPRESA</div>
           <div style={{ fontSize: 12, background: "#f1f5f9", padding: "4px 8px", borderRadius: "12px", color: "#64748b", fontWeight: 600 }}>Hora Chile</div>
         </div>
 
         {/* Calendar Grid */}
         <div style={{ background: "#fff", border: "1px solid #e2e8f0", borderRadius: 20, padding: 20, boxShadow: "0 1px 3px 0 rgb(0 0 0 / 0.05)" }}>
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 20 }}>
-            <button onClick={() => setMonthUTC((d) => addMonthsUTC(d, -1))} style={{ background: "#f8fafc", border: "1px solid #e2e8f0", padding: "8px 12px", borderRadius: "8px", cursor: "pointer", color: "#475569" }}> ❮ </button>
+            {/* Botón Atrás: Deshabilitado si estamos en el mes actual */}
+            <button 
+              onClick={() => canGoBack && setMonthUTC((d) => addMonthsUTC(d, -1))} 
+              disabled={!canGoBack}
+              style={{ 
+                background: canGoBack ? "#f8fafc" : "#f1f5f9", 
+                border: "1px solid #e2e8f0", padding: "8px 12px", borderRadius: "8px", 
+                cursor: canGoBack ? "pointer" : "not-allowed", 
+                color: canGoBack ? "#475569" : "#cbd5e1" 
+              }}
+            > 
+              ❮ 
+            </button>
             <div style={{ textTransform: "capitalize", fontWeight: 700, fontSize: 16, color: "#0f172a" }}>{monthTitleChile(monthUTC)}</div>
-            <button onClick={() => setMonthUTC((d) => addMonthsUTC(d, +1))} style={{ background: "#f8fafc", border: "1px solid #e2e8f0", padding: "8px 12px", borderRadius: "8px", cursor: "pointer", color: "#475569" }}> ❯ </button>
+            <button 
+              onClick={() => setMonthUTC((d) => addMonthsUTC(d, +1))} 
+              style={{ background: "#f8fafc", border: "1px solid #e2e8f0", padding: "8px 12px", borderRadius: "8px", cursor: "pointer", color: "#475569" }}
+            > 
+              ❯ 
+            </button>
           </div>
 
           <div style={{ display: "grid", gridTemplateColumns: "repeat(7, 1fr)", gap: 4, marginBottom: 8 }}>
@@ -286,16 +302,30 @@ export default function EmbedBookingPage() {
           <div style={{ display: "grid", gridTemplateColumns: "repeat(7, 1fr)", gap: 4 }}>
             {monthGrid.map((d) => {
               const isSelected = d.ymd === selectedDay;
+              const isPast = d.ymd < initialDay; // Validar si es día pasado
+
               return (
                 <button
                   key={d.ymd}
-                  onClick={() => { setSelectedDay(d.ymd); setPickedSlot(null); }}
+                  disabled={isPast}
+                  onClick={() => { 
+                    if (!isPast) {
+                        setSelectedDay(d.ymd); 
+                        setPickedSlot(null); 
+                    }
+                  }}
                   style={{
                     padding: "10px 0", borderRadius: "10px",
                     border: isSelected ? "2px solid #2563eb" : "1px solid transparent",
                     background: isSelected ? "#eff6ff" : "transparent",
-                    color: isSelected ? "#1d4ed8" : (d.inMonth ? "#334155" : "#cbd5e1"),
-                    cursor: "pointer", fontSize: 14, fontWeight: isSelected ? 700 : 500,
+                    color: isPast 
+                        ? "#e2e8f0" // Muy claro para pasados
+                        : isSelected 
+                            ? "#1d4ed8" 
+                            : (d.inMonth ? "#334155" : "#cbd5e1"),
+                    cursor: isPast ? "default" : "pointer", 
+                    fontSize: 14, fontWeight: isSelected ? 700 : 500,
+                    textDecoration: isPast ? "line-through" : "none"
                   }}
                 >
                   {d.ymd.slice(-2)}
@@ -361,7 +391,6 @@ export default function EmbedBookingPage() {
             <input type="tel" value={visitorPhone} onChange={(e) => setVisitorPhone(e.target.value)} placeholder="Teléfono" style={inputStyle} disabled={submitting} />
             <textarea value={notes} onChange={(e) => setNotes(e.target.value)} placeholder="Notas adicionales..." style={{...inputStyle, minHeight: 80, resize: "none"}} disabled={submitting} />
 
-            {/* Mensajes de Error */}
             {msg && msgType === 'error' && (
               <div style={{ padding: "10px", borderRadius: "8px", fontSize: "13px", fontWeight: 500, background: "#fef2f2", color: "#991b1b" }}>
                 {msg}

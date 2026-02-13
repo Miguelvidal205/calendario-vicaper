@@ -1,4 +1,3 @@
-// apps/backoffice/src/app/embed/booking/[slug]/widget.tsx
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
@@ -22,7 +21,10 @@ function formatTime(iso: string) {
 }
 
 export default function BookingWidget(props: { slug: string }) {
-  const [date, setDate] = useState<string>(todayLocalYYYYMMDD());
+  // Calculamos la fecha mínima permitida (hoy)
+  const minDate = useMemo(() => todayLocalYYYYMMDD(), []);
+  
+  const [date, setDate] = useState<string>(minDate);
   const [loading, setLoading] = useState(false);
   const [slots, setSlots] = useState<Slot[]>([]);
   const [selected, setSelected] = useState<Slot | null>(null);
@@ -35,8 +37,6 @@ export default function BookingWidget(props: { slug: string }) {
 
   const [doneId, setDoneId] = useState<string | null>(null);
 
-  // bookingKey: lo más simple es pasarlo por query param del iframe:
-  // <iframe src="https://tuapp.com/embed/booking/mi-terreno?key=XXXX" />
   const bookingKey = useMemo(() => {
     if (typeof window === "undefined") return "";
     const u = new URL(window.location.href);
@@ -107,50 +107,49 @@ export default function BookingWidget(props: { slug: string }) {
     }
   }
 
+  const inputStyle = {
+    width: "100%", padding: 10, borderRadius: 10,
+    border: "1px solid #e2e8f0", marginBottom: 8,
+    boxSizing: "border-box" as const, fontSize: "14px"
+  };
+
   if (doneId) {
     return (
-      <section>
+      <section style={{ textAlign: 'center', padding: 20 }}>
         <h1 style={{ fontSize: 20, marginBottom: 8 }}>Reserva confirmada ✅</h1>
-        <p style={{ color: "#334155" }}>
-          Tu cita fue creada correctamente.
-        </p>
-        <div style={{ marginTop: 12, fontSize: 12, color: "#64748b" }}>
-          ID: {doneId}
-        </div>
+        <p style={{ color: "#334155" }}>Tu cita fue creada correctamente.</p>
+        <div style={{ marginTop: 12, fontSize: 12, color: "#64748b" }}>ID: {doneId}</div>
       </section>
     );
   }
 
   return (
-    <section>
-      <h1 style={{ fontSize: 20, marginBottom: 8 }}>Reserva tu visita</h1>
-      <p style={{ color: "#475569", marginBottom: 16 }}>
-        Elige una fecha y un horario disponible.
-      </p>
+    <section style={{ fontFamily: "system-ui, sans-serif" }}>
+      <h1 style={{ fontSize: 20, marginBottom: 8, color: "#0f172a", fontWeight: 700 }}>Reserva tu visita</h1>
+      <p style={{ color: "#475569", marginBottom: 16, fontSize: 14 }}>Elige una fecha y un horario disponible.</p>
 
-      <label style={{ display: "block", marginBottom: 8, fontSize: 12, color: "#334155" }}>
+      <label style={{ display: "block", marginBottom: 6, fontSize: 12, fontWeight: 600, color: "#334155" }}>
         Fecha
       </label>
       <input
         type="date"
+        min={minDate} // VALIDACIÓN: Impide seleccionar fechas pasadas
         value={date}
         onChange={(e) => setDate(e.target.value)}
         style={{
-          width: "100%",
-          padding: 10,
-          borderRadius: 10,
-          border: "1px solid #e2e8f0",
-          marginBottom: 16,
+          width: "100%", padding: 10, borderRadius: 10,
+          border: "1px solid #e2e8f0", marginBottom: 16,
+          fontFamily: "inherit"
         }}
       />
 
       <div style={{ marginBottom: 16 }}>
-        <div style={{ fontSize: 12, color: "#334155", marginBottom: 8 }}>Horarios</div>
+        <div style={{ fontSize: 12, fontWeight: 600, color: "#334155", marginBottom: 8 }}>Horarios</div>
 
         {loading ? (
-          <div style={{ color: "#64748b" }}>Cargando…</div>
+          <div style={{ color: "#64748b", fontSize: 13 }}>Cargando…</div>
         ) : slots.length === 0 ? (
-          <div style={{ color: "#64748b" }}>No hay horarios disponibles para este día.</div>
+          <div style={{ color: "#64748b", fontSize: 13, background: "#f1f5f9", padding: 10, borderRadius: 8 }}>No hay horarios disponibles para este día.</div>
         ) : (
           <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 8 }}>
             {slots.map((s) => {
@@ -160,12 +159,11 @@ export default function BookingWidget(props: { slug: string }) {
                   key={s.startsAt}
                   onClick={() => setSelected(s)}
                   style={{
-                    padding: "10px 8px",
-                    borderRadius: 10,
+                    padding: "10px 4px", borderRadius: 10,
                     border: active ? "2px solid #2563eb" : "1px solid #e2e8f0",
                     background: active ? "#eff6ff" : "#fff",
-                    cursor: "pointer",
-                    fontSize: 12,
+                    cursor: "pointer", fontSize: 12,
+                    color: active ? "#1d4ed8" : "#334155", fontWeight: active ? 600 : 400
                   }}
                 >
                   {formatTime(s.startsAt)}
@@ -177,36 +175,16 @@ export default function BookingWidget(props: { slug: string }) {
       </div>
 
       <div style={{ borderTop: "1px solid #e2e8f0", paddingTop: 16, marginTop: 16 }}>
-        <div style={{ fontSize: 12, color: "#334155", marginBottom: 8 }}>Tus datos</div>
-
-        <input
-          placeholder="Nombre y apellido"
-          value={visitorName}
-          onChange={(e) => setVisitorName(e.target.value)}
-          style={{ width: "100%", padding: 10, borderRadius: 10, border: "1px solid #e2e8f0", marginBottom: 8 }}
-        />
-        <input
-          placeholder="Email"
-          value={visitorEmail}
-          onChange={(e) => setVisitorEmail(e.target.value)}
-          style={{ width: "100%", padding: 10, borderRadius: 10, border: "1px solid #e2e8f0", marginBottom: 8 }}
-        />
-        <input
-          placeholder="Teléfono"
-          value={visitorPhone}
-          onChange={(e) => setVisitorPhone(e.target.value)}
-          style={{ width: "100%", padding: 10, borderRadius: 10, border: "1px solid #e2e8f0", marginBottom: 8 }}
-        />
-        <textarea
-          placeholder="Notas (opcional)"
-          value={notes}
-          onChange={(e) => setNotes(e.target.value)}
-          style={{ width: "100%", padding: 10, borderRadius: 10, border: "1px solid #e2e8f0", minHeight: 80 }}
-        />
+        <div style={{ fontSize: 12, fontWeight: 600, color: "#334155", marginBottom: 12 }}>Tus datos</div>
+        
+        <input placeholder="Nombre y apellido" value={visitorName} onChange={(e) => setVisitorName(e.target.value)} style={inputStyle} />
+        <input placeholder="Email" type="email" value={visitorEmail} onChange={(e) => setVisitorEmail(e.target.value)} style={inputStyle} />
+        <input placeholder="Teléfono" type="tel" value={visitorPhone} onChange={(e) => setVisitorPhone(e.target.value)} style={inputStyle} />
+        <textarea placeholder="Notas (opcional)" value={notes} onChange={(e) => setNotes(e.target.value)} style={{ ...inputStyle, minHeight: 80, resize: "none" }} />
       </div>
 
       {error ? (
-        <div style={{ marginTop: 12, color: "#b91c1c", fontSize: 13 }}>
+        <div style={{ marginTop: 12, padding: 10, background: "#fef2f2", color: "#b91c1c", fontSize: 13, borderRadius: 8 }}>
           {error}
         </div>
       ) : null}
@@ -215,22 +193,16 @@ export default function BookingWidget(props: { slug: string }) {
         onClick={submit}
         disabled={loading}
         style={{
-          marginTop: 16,
-          width: "100%",
-          padding: 12,
-          borderRadius: 12,
-          border: "none",
-          background: "#2563eb",
-          color: "#fff",
-          cursor: "pointer",
-          opacity: loading ? 0.7 : 1,
+          marginTop: 16, width: "100%", padding: 12, borderRadius: 12, border: "none",
+          background: "#2563eb", color: "#fff", cursor: "pointer",
+          opacity: loading ? 0.7 : 1, fontWeight: 600, fontSize: 15
         }}
       >
-        Confirmar reserva
+        {loading ? "Procesando..." : "Confirmar reserva"}
       </button>
 
-      <div style={{ marginTop: 10, fontSize: 11, color: "#64748b" }}>
-        * Se mostrará dentro de un iframe en tu sitio.
+      <div style={{ marginTop: 12, fontSize: 11, color: "#94a3b8", textAlign: "center" }}>
+        Powered by Vicaper
       </div>
     </section>
   );

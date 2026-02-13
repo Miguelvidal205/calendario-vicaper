@@ -130,7 +130,6 @@ export default function BookingSettingsForm(props: { terrenoId: string }) {
     }
   }
 
-  // ✅ Fix definitivo
   function updateRange(day: DayKey, idx: number, patch: Partial<Range>) {
     setWorkingHours((prev) => {
       const arr = prev[day];
@@ -212,7 +211,7 @@ export default function BookingSettingsForm(props: { terrenoId: string }) {
         throw new Error(data?.message ?? "No se pudo guardar");
       }
 
-      setNotice("Guardado ✅");
+      setNotice("Configuración guardada correctamente ✅");
     } catch (e: any) {
       setError(e.message ?? "Error");
     } finally {
@@ -231,7 +230,7 @@ export default function BookingSettingsForm(props: { terrenoId: string }) {
       const j = await r.json();
       if (!r.ok) throw new Error(j?.message ?? "No se pudo generar key");
       setBookingKey(String(j.bookingKey));
-      setNotice("Nueva booking key generada. Se muestra solo esta vez ✅");
+      setNotice("Nueva booking key generada. Cópiala ahora, no se volverá a mostrar.");
     } catch (e: any) {
       setError(e.message ?? "Error");
     }
@@ -279,336 +278,269 @@ export default function BookingSettingsForm(props: { terrenoId: string }) {
 
   function copy(text: string) {
     void navigator.clipboard.writeText(text);
-    setNotice("Copiado ✅");
+    setNotice("Copiado al portapapeles ✅");
   }
 
-  if (loading) return <div style={{ color: "#64748b" }}>Cargando…</div>;
+  if (loading) return <div style={{ color: "var(--text-muted)", padding: 20 }}>Cargando configuración...</div>;
 
   return (
-    <div style={{ display: "grid", gridTemplateColumns: "1fr", gap: 16 }}>
-      <section style={{ border: "1px solid #e2e8f0", borderRadius: 14, padding: 16 }}>
-        <h2 style={{ fontSize: 16, marginBottom: 12 }}>Configuración</h2>
+    <div style={{ display: "grid", gridTemplateColumns: "1fr", gap: 24 }}>
+      
+      {/* SECCIÓN: Configuración General */}
+      <section className="ui-card">
+        <h2 className="ui-subtitle">Configuración General</h2>
 
-        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))", gap: 16 }}>
           <div>
-            <label style={{ display: "block", fontSize: 12, color: "#334155", marginBottom: 6 }}>Slug (URL)</label>
+            <label className="ui-label">Slug (URL amigable)</label>
             <input
               value={slug}
               onChange={(e) => setSlug(e.target.value.trim())}
               placeholder="mi-terreno"
-              style={{ width: "100%", padding: 10, borderRadius: 10, border: "1px solid #e2e8f0" }}
+              className="ui-input"
             />
-            <div style={{ fontSize: 11, color: "#64748b", marginTop: 6 }}>
-              Se usa en: <code>/embed/booking/{slug}</code>
+            <div style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 6 }}>
+              Visible en: <code>/embed/booking/{slug}</code>
             </div>
           </div>
 
           <div>
-            <label style={{ display: "block", fontSize: 12, color: "#334155", marginBottom: 6 }}>Timezone</label>
+            <label className="ui-label">Zona Horaria</label>
             <input
               value={timezone}
               readOnly
-              style={{
-                width: "100%",
-                padding: 10,
-                borderRadius: 10,
-                border: "1px solid #e2e8f0",
-                background: "#f8fafc",
-              }}
+              className="ui-input"
+              style={{ background: "#f1f5f9", color: "#64748b" }}
             />
-            <div style={{ fontSize: 11, color: "#64748b", marginTop: 6 }}>Hora fija Chile (America/Santiago).</div>
+            <div style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 6 }}>Fijo: Chile Continental</div>
           </div>
 
           <div>
-            <label style={{ display: "block", fontSize: 12, color: "#334155", marginBottom: 6 }}>
-              Duración slot (min)
-            </label>
+            <label className="ui-label">Duración slot (min)</label>
             <input
               type="number"
               value={slotDurationMinutes}
               onChange={(e) => setSlotDurationMinutes(Number(e.target.value))}
-              style={{ width: "100%", padding: 10, borderRadius: 10, border: "1px solid #e2e8f0" }}
+              className="ui-input"
             />
           </div>
 
           <div>
-            <label style={{ display: "block", fontSize: 12, color: "#334155", marginBottom: 6 }}>Buffer (min)</label>
+            <label className="ui-label">Buffer entre citas (min)</label>
             <input
               type="number"
               value={bufferMinutes}
               onChange={(e) => setBufferMinutes(Number(e.target.value))}
-              style={{ width: "100%", padding: 10, borderRadius: 10, border: "1px solid #e2e8f0" }}
+              className="ui-input"
             />
           </div>
         </div>
 
-        <div style={{ marginTop: 12 }}>
-          <label style={{ display: "flex", gap: 8, alignItems: "center" }}>
-            <input type="checkbox" checked={bookingEnabled} onChange={(e) => setBookingEnabled(e.target.checked)} />
-            <span style={{ fontSize: 13 }}>Booking habilitado</span>
+        <div style={{ marginTop: 24, display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+          <label style={{ display: "flex", gap: 10, alignItems: "center", cursor: "pointer" }}>
+            <input 
+                type="checkbox" 
+                checked={bookingEnabled} 
+                onChange={(e) => setBookingEnabled(e.target.checked)} 
+                style={{ width: 18, height: 18, accentColor: "var(--primary)" }}
+            />
+            <span style={{ fontSize: 14, fontWeight: 600 }}>Habilitar Booking Público</span>
           </label>
-        </div>
 
-        <div style={{ marginTop: 12 }}>
           <button
             onClick={saveSettings}
             disabled={saving}
-            style={{
-              padding: "10px 12px",
-              borderRadius: 12,
-              border: "none",
-              background: "#2563eb",
-              color: "#fff",
-              cursor: "pointer",
-              fontSize: 13,
-              opacity: saving ? 0.7 : 1,
-            }}
+            className="ui-btn ui-btn-primary"
+            style={{ width: "140px" }}
           >
-            {saving ? "Guardando…" : "Guardar"}
+            {saving ? "Guardando..." : "Guardar Cambios"}
           </button>
         </div>
       </section>
 
-      <section style={{ border: "1px solid #e2e8f0", borderRadius: 14, padding: 16 }}>
-        <h2 style={{ fontSize: 16, marginBottom: 12 }}>Horarios laborales</h2>
+      {/* SECCIÓN: Horarios Laborales */}
+      <section className="ui-card">
+        <h2 className="ui-subtitle">Horarios de Disponibilidad</h2>
 
-        {(Object.keys(DAY_LABEL) as DayKey[]).map((day) => (
-          <div key={day} style={{ padding: "10px 0", borderTop: "1px solid #f1f5f9" }}>
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-              <div style={{ fontSize: 13, color: "#0f172a" }}>{DAY_LABEL[day]}</div>
-              <button
-                onClick={() => addRange(day)}
-                style={{
-                  padding: "6px 10px",
-                  borderRadius: 10,
-                  border: "1px solid #e2e8f0",
-                  background: "#fff",
-                  cursor: "pointer",
-                  fontSize: 12,
-                }}
-              >
-                + Agregar rango
-              </button>
-            </div>
-
-            {workingHours[day].length === 0 ? (
-              <div style={{ marginTop: 8, color: "#64748b", fontSize: 12 }}>Sin horarios.</div>
-            ) : (
-              <div style={{ marginTop: 8, display: "grid", gap: 8 }}>
-                {workingHours[day].map((r, idx) => (
-                  <div key={idx} style={{ display: "grid", gridTemplateColumns: "1fr 1fr auto", gap: 8 }}>
-                    <input
-                      value={r.start}
-                      onChange={(e) => updateRange(day, idx, { start: e.target.value })}
-                      placeholder="09:00"
-                      style={{ padding: 10, borderRadius: 10, border: "1px solid #e2e8f0" }}
-                    />
-                    <input
-                      value={r.end}
-                      onChange={(e) => updateRange(day, idx, { end: e.target.value })}
-                      placeholder="18:00"
-                      style={{ padding: 10, borderRadius: 10, border: "1px solid #e2e8f0" }}
-                    />
-                    <button
-                      onClick={() => removeRange(day, idx)}
-                      style={{
-                        padding: "0 10px",
-                        borderRadius: 10,
-                        border: "1px solid #fee2e2",
-                        background: "#fff",
-                        color: "#b91c1c",
-                        cursor: "pointer",
-                        fontSize: 12,
-                      }}
-                    >
-                      Eliminar
-                    </button>
-                  </div>
-                ))}
+        <div style={{ display: "grid", gap: 0 }}>
+          {(Object.keys(DAY_LABEL) as DayKey[]).map((day) => (
+            <div key={day} style={{ padding: "16px 0", borderBottom: "1px solid #f1f5f9" }}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
+                <div style={{ fontWeight: 600, fontSize: 14 }}>{DAY_LABEL[day]}</div>
+                <button
+                  onClick={() => addRange(day)}
+                  className="ui-btn"
+                  style={{ padding: "4px 10px", fontSize: 12, background: "#f8fafc", border: "1px solid var(--border-color)", color: "var(--text-secondary)" }}
+                >
+                  + Agregar Horario
+                </button>
               </div>
-            )}
-          </div>
-        ))}
+
+              {workingHours[day].length === 0 ? (
+                <div style={{ fontSize: 13, color: "var(--text-muted)", fontStyle: "italic" }}>No disponible (Cerrado)</div>
+              ) : (
+                <div style={{ display: "grid", gap: 10 }}>
+                  {workingHours[day].map((r, idx) => (
+                    <div key={idx} style={{ display: "flex", gap: 10, alignItems: "center" }}>
+                      <input
+                        value={r.start}
+                        onChange={(e) => updateRange(day, idx, { start: e.target.value })}
+                        placeholder="09:00"
+                        className="ui-input"
+                        style={{ maxWidth: 100, textAlign: "center" }}
+                      />
+                      <span style={{ color: "var(--text-muted)" }}>-</span>
+                      <input
+                        value={r.end}
+                        onChange={(e) => updateRange(day, idx, { end: e.target.value })}
+                        placeholder="18:00"
+                        className="ui-input"
+                        style={{ maxWidth: 100, textAlign: "center" }}
+                      />
+                      <button
+                        onClick={() => removeRange(day, idx)}
+                        style={{
+                          background: "transparent",
+                          border: "none",
+                          color: "#ef4444",
+                          cursor: "pointer",
+                          padding: 4,
+                          fontSize: 18,
+                          marginLeft: 8
+                        }}
+                        title="Eliminar rango"
+                      >
+                        &times;
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          ))}
+        </div>
       </section>
 
-      <section style={{ border: "1px solid #e2e8f0", borderRadius: 14, padding: 16 }}>
-        <h2 style={{ fontSize: 16, marginBottom: 12 }}>Seguridad (Booking Key)</h2>
+      {/* SECCIÓN: Seguridad */}
+      <section className="ui-card">
+        <h2 className="ui-subtitle">Seguridad (Booking Key)</h2>
+        <p style={{ fontSize: 13, color: "var(--text-muted)", marginBottom: 16 }}>
+            Esta clave es necesaria para que el widget funcione. Si la rotas, deberás actualizar el código embebido en tu sitio web.
+        </p>
 
-        <div style={{ display: "flex", gap: 10, alignItems: "center" }}>
-          <button
-            onClick={rotateKey}
-            style={{
-              padding: "10px 12px",
-              borderRadius: 12,
-              border: "1px solid #e2e8f0",
-              background: "#fff",
-              cursor: "pointer",
-              fontSize: 13,
-            }}
-          >
-            Generar / Rotar key
+        <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
+          <button onClick={rotateKey} className="ui-btn" style={{ background: "#f8fafc", border: "1px solid var(--border-color)" }}>
+            🔄 Generar nueva Key
           </button>
-
-          {bookingKey ? (
-            <button
-              onClick={() => copy(bookingKey)}
-              style={{
-                padding: "10px 12px",
-                borderRadius: 12,
-                border: "1px solid #e2e8f0",
-                background: "#fff",
-                cursor: "pointer",
-                fontSize: 13,
-              }}
-            >
-              Copiar key
+          {bookingKey && (
+            <button onClick={() => copy(bookingKey)} className="ui-btn" style={{ background: "#f8fafc", border: "1px solid var(--border-color)" }}>
+              📋 Copiar Key
             </button>
-          ) : null}
+          )}
         </div>
 
         {bookingKey ? (
-          <div style={{ marginTop: 10 }}>
-            <div style={{ fontSize: 12, color: "#334155", marginBottom: 6 }}>Booking key (solo esta vez):</div>
-            <code style={{ display: "block", padding: 10, borderRadius: 10, background: "#f8fafc" }}>{bookingKey}</code>
+          <div style={{ marginTop: 16 }}>
+            <div className="ui-label">Tu nueva Booking Key:</div>
+            <div style={{ background: "#fffbeb", padding: 12, borderRadius: 8, border: "1px solid #fcd34d", fontFamily: "monospace", color: "#b45309", wordBreak: "break-all" }}>
+                {bookingKey}
+            </div>
+            <div style={{ fontSize: 11, color: "#b45309", marginTop: 4 }}>
+                ⚠️ Cópiala ahora. Por seguridad, no se volverá a mostrar completa.
+            </div>
           </div>
         ) : (
-          <div style={{ marginTop: 10, fontSize: 12, color: "#64748b" }}>Genera una key para habilitar el widget.</div>
+          <div style={{ marginTop: 16, fontSize: 13, color: "var(--text-muted)", fontStyle: "italic" }}>
+            (No hay key visible. Si ya tienes una configurada y funciona, no necesitas generar otra a menos que haya sido comprometida).
+          </div>
         )}
       </section>
 
-      <section style={{ border: "1px solid #e2e8f0", borderRadius: 14, padding: 16 }}>
-        <h2 style={{ fontSize: 16, marginBottom: 12 }}>Dominios permitidos (iframe)</h2>
+      {/* SECCIÓN: Dominios */}
+      <section className="ui-card">
+        <h2 className="ui-subtitle">Dominios Permitidos (CORS)</h2>
+        <p style={{ fontSize: 13, color: "var(--text-muted)", marginBottom: 16 }}>
+          Especifica qué dominios pueden mostrar tu calendario (ej: <code>localhost:3000</code> o <code>mitiendas.cl</code>).
+        </p>
 
-        <div style={{ fontSize: 12, color: "#64748b", marginBottom: 10 }}>
-          Agrega el dominio donde vas a embeber el iframe. En local: <code>localhost:3000</code>
-        </div>
-
-        <div style={{ display: "flex", gap: 8 }}>
+        <div style={{ display: "flex", gap: 10, marginBottom: 16 }}>
           <input
             value={newDomain}
             onChange={(e) => setNewDomain(e.target.value)}
-            placeholder="ej: localhost:3000 o tusitio.cl"
-            style={{ flex: 1, padding: 10, borderRadius: 10, border: "1px solid #e2e8f0" }}
+            placeholder="ej: misitio.com"
+            className="ui-input"
           />
-          <button
-            onClick={addDomain}
-            style={{
-              padding: "10px 12px",
-              borderRadius: 12,
-              border: "none",
-              background: "#0f172a",
-              color: "#fff",
-              cursor: "pointer",
-              fontSize: 13,
-            }}
-          >
+          <button onClick={addDomain} className="ui-btn" style={{ background: "#0f172a", color: "white" }}>
             Agregar
           </button>
-          <button
-            onClick={reloadDomains}
-            disabled={domainsLoading}
-            style={{
-              padding: "10px 12px",
-              borderRadius: 12,
-              border: "1px solid #e2e8f0",
-              background: "#fff",
-              cursor: "pointer",
-              fontSize: 13,
-              opacity: domainsLoading ? 0.7 : 1,
-            }}
-          >
-            {domainsLoading ? "…" : "Recargar"}
+          <button onClick={reloadDomains} disabled={domainsLoading} className="ui-btn" style={{ border: "1px solid var(--border-color)", background: "white" }}>
+            ↻
           </button>
         </div>
 
-        <div style={{ marginTop: 12 }}>
+        <div style={{ display: "grid", gap: 8 }}>
           {domains.length === 0 ? (
-            <div style={{ color: "#64748b", fontSize: 12 }}>No hay dominios aún.</div>
+             <div style={{ padding: 12, textAlign: "center", background: "#f8fafc", borderRadius: 8, fontSize: 13, color: "var(--text-muted)" }}>
+                No hay dominios configurados.
+             </div>
           ) : (
-            <div style={{ display: "grid", gap: 8 }}>
-              {domains.map((d) => (
-                <div
-                  key={d.id}
-                  style={{
-                    display: "flex",
-                    justifyContent: "space-between",
-                    alignItems: "center",
-                    border: "1px solid #e2e8f0",
-                    borderRadius: 12,
-                    padding: "10px 12px",
-                  }}
-                >
-                  <div style={{ fontSize: 13 }}>
-                    <code>{d.domain}</code>{" "}
-                    <span style={{ color: d.enabled ? "#166534" : "#b45309", fontSize: 12 }}>
-                      {d.enabled ? "enabled" : "disabled"}
-                    </span>
+              domains.map((d) => (
+                <div key={d.id} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "8px 12px", background: "#f8fafc", borderRadius: 8, border: "1px solid var(--border-color)" }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                     <span style={{ fontFamily: "monospace", fontSize: 13 }}>{d.domain}</span>
+                     <span className={`ui-badge ${d.enabled ? 'completed' : 'cancelled'}`} style={{ fontSize: 10, padding: "2px 6px" }}>
+                        {d.enabled ? "ACTIVO" : "INACTIVO"}
+                     </span>
                   </div>
-                  <button
-                    onClick={() => deleteDomain(d.id)}
-                    style={{
-                      padding: "8px 10px",
-                      borderRadius: 10,
-                      border: "1px solid #fee2e2",
-                      background: "#fff",
-                      color: "#b91c1c",
-                      cursor: "pointer",
-                      fontSize: 12,
-                    }}
-                  >
+                  <button onClick={() => deleteDomain(d.id)} style={{ background: "transparent", border: "none", color: "#ef4444", cursor: "pointer", fontSize: 12, fontWeight: 600 }}>
                     Eliminar
                   </button>
                 </div>
-              ))}
-            </div>
+              ))
           )}
         </div>
       </section>
 
-      <section style={{ border: "1px solid #e2e8f0", borderRadius: 14, padding: 16 }}>
-        <h2 style={{ fontSize: 16, marginBottom: 12 }}>Preview (iframe)</h2>
-
-        <div style={{ fontSize: 12, color: "#334155", marginBottom: 8 }}>URL de preview:</div>
-        <code style={{ display: "block", padding: 10, borderRadius: 10, background: "#f8fafc" }}>{previewUrl}</code>
-
-        <div style={{ display: "flex", gap: 10, marginTop: 12 }}>
-          <button
-            onClick={() => window.open(previewUrl, "_blank")}
-            style={{
-              padding: "10px 12px",
-              borderRadius: 12,
-              border: "1px solid #e2e8f0",
-              background: "#fff",
-              cursor: "pointer",
-              fontSize: 13,
-            }}
-          >
-            Abrir preview
-          </button>
-
-          <button
-            onClick={() => copy(iframeSnippet)}
-            style={{
-              padding: "10px 12px",
-              borderRadius: 12,
-              border: "1px solid #e2e8f0",
-              background: "#fff",
-              cursor: "pointer",
-              fontSize: 13,
-            }}
-          >
-            Copiar iframe
-          </button>
+      {/* SECCIÓN: Preview */}
+      <section className="ui-card">
+        <h2 className="ui-subtitle">Integración</h2>
+        
+        <div style={{ marginBottom: 16 }}>
+            <div className="ui-label">Link Directo / Preview</div>
+            <div style={{ display: "flex", gap: 8 }}>
+                <input readOnly value={previewUrl} className="ui-input" style={{ background: "#f1f5f9", color: "#64748b" }} />
+                <button onClick={() => window.open(previewUrl, "_blank")} className="ui-btn" style={{ border: "1px solid var(--border-color)", background: "white" }}>
+                    Abrir ↗
+                </button>
+            </div>
         </div>
 
-        <div style={{ marginTop: 10, fontSize: 12, color: "#64748b" }}>Snippet iframe:</div>
-        <pre style={{ marginTop: 6, padding: 10, borderRadius: 10, background: "#f8fafc", overflowX: "auto" }}>
-          {iframeSnippet}
-        </pre>
+        <div>
+            <div className="ui-label">Código Iframe (Copiar y pegar)</div>
+            <div style={{ position: "relative" }}>
+                <textarea 
+                    readOnly 
+                    value={iframeSnippet} 
+                    className="ui-input" 
+                    style={{ height: 100, fontFamily: "monospace", fontSize: 12, background: "#0f172a", color: "#e2e8f0", resize: "none" }} 
+                />
+                <button 
+                    onClick={() => copy(iframeSnippet)}
+                    className="ui-btn ui-btn-primary"
+                    style={{ position: "absolute", bottom: 10, right: 10, padding: "4px 10px", fontSize: 12 }}
+                >
+                    Copiar Código
+                </button>
+            </div>
+        </div>
 
-        {error ? <div style={{ marginTop: 12, color: "#b91c1c" }}>{error}</div> : null}
-        {notice ? <div style={{ marginTop: 12, color: "#166534" }}>{notice}</div> : null}
+        {/* FEEDBACK GLOBAL */}
+        <div style={{ marginTop: 20 }}>
+            {error && <div className="ui-feedback error">{error}</div>}
+            {notice && <div className="ui-feedback success">{notice}</div>}
+        </div>
       </section>
+
     </div>
   );
 }
