@@ -75,7 +75,7 @@ export async function GET(
     const { data: settings, error: sErr } = await admin
       .from("terreno_booking_settings")
       .select(
-        "slot_duration_minutes, buffer_minutes, working_hours, primary_color, background_color, logo_url",
+        "slot_duration_minutes, buffer_minutes, working_hours, primary_color, background_color, logo_url, mail_subject, mail_body",
       )
       .eq("terreno_id", id)
       .maybeSingle();
