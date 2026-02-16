@@ -4,11 +4,13 @@ import { supabaseAdmin } from "@/lib/supabase/admin";
 import { jsonError } from "@/lib/http/errorResponse";
 import { sha256Hex } from "@/lib/publicBooking/bookingKey";
 import { EVENT_TYPES } from "@vicaper/events";
-// Asegúrate que tu path mapping en tsconfig permita esto, o usa ruta relativa si es necesario
-// Si falla el import, ajusta la ruta a donde guardaste el archivo anterior.
 import { DateUtils } from "@vicaper/contracts";
 
-const ParamsSchema = z.object({ slug: z.string().min(2).max(200) });
+// --- Esquemas de Validación ---
+
+const ParamsSchema = z.object({
+  slug: z.string().min(2).max(200),
+});
 
 const BodySchema = z.object({
   bookingKey: z.string().min(12).max(200),
@@ -20,9 +22,13 @@ const BodySchema = z.object({
   notes: z.string().max(1000).optional().or(z.literal("")),
 });
 
+// --- Tipos Auxiliares ---
+
 type DayKey = "mon" | "tue" | "wed" | "thu" | "fri" | "sat" | "sun";
 type Range = { start: string; end: string };
 type WorkingHours = Record<DayKey, Range[]>;
+
+// --- Funciones Auxiliares ---
 
 function originHost(req: Request): string | null {
   const origin = req.headers.get("origin");
@@ -45,6 +51,7 @@ async function resolveTerreno(
     .select("id, booking_enabled")
     .eq("slug", slug)
     .single();
+
   if (error) throw new Error(error.message);
 
   if (!data?.booking_enabled) {
@@ -63,7 +70,7 @@ async function verifyOriginAllowed(
 ) {
   if (!host) return;
 
-  // DEV shortcut
+  // DEV shortcut: permitir localhost en desarrollo
   if (process.env.NODE_ENV !== "production") {
     if (host.startsWith("localhost:") || host.startsWith("127.0.0.1:")) return;
   }
@@ -79,6 +86,7 @@ async function verifyOriginAllowed(
   const allowed = (data ?? []).some(
     (r: any) => String(r.domain).toLowerCase() === host.toLowerCase(),
   );
+
   if (!allowed) {
     const err = new Error("ORIGIN_NOT_ALLOWED");
     (err as any).code = "ORIGIN_NOT_ALLOWED";
@@ -98,6 +106,7 @@ async function verifyBookingKey(
     .maybeSingle();
 
   if (error) throw new Error(error.message);
+
   if (!data?.booking_key_hash) {
     const err = new Error("BOOKING_KEY_NOT_SET");
     (err as any).code = "BOOKING_KEY_NOT_SET";
@@ -105,6 +114,7 @@ async function verifyBookingKey(
   }
 
   const got = sha256Hex(bookingKey);
+  // Comparación estricta del hash
   if (got !== String((data as any).booking_key_hash)) {
     const err = new Error("BOOKING_UNAUTHORIZED");
     (err as any).code = "BOOKING_UNAUTHORIZED";
@@ -118,7 +128,7 @@ async function getSettings(
 ) {
   const { data, error } = await admin
     .from("terreno_booking_settings")
-    .select("working_hours")
+    .select("working_hours, slot_duration_minutes") // Intentamos traer la duración si existe columna
     .eq("terreno_id", terrenoId)
     .maybeSingle();
 
@@ -134,14 +144,14 @@ async function getSettings(
     sun: [],
   }) as WorkingHours;
 
-  const durationMin = 60; // TODO: Leer de settings si existe columna
+  // Default a 60 min si no viene de la DB
+  const durationMin = (data as any)?.slot_duration_minutes ?? 60;
 
   return { workingHours, durationMin };
 }
 
 function dayKeyFromDate(date: string): DayKey {
-  // OJO: Esto asume UTC date string simple, para sacar el día de la semana.
-  // Es "good enough" si la fecha viene YYYY-MM-DD.
+  // Asume formato YYYY-MM-DD para obtener el día de la semana
   const d = new Date(`${date}T12:00:00.000Z`);
   const dow = d.getUTCDay();
   const map: DayKey[] = ["sun", "mon", "tue", "wed", "thu", "fri", "sat"];
@@ -171,11 +181,13 @@ function isWithinWorkingHours(
   const startMin = minutes(t.h, t.m);
   const endMin = startMin + durationMin;
 
+  // Verificar si el bloque de tiempo solicitado cae dentro de algún rango disponible
   return ranges.some((r) => {
     const rs = parseHHMM(r.start);
     const re = parseHHMM(r.end);
     const rStart = minutes(rs.h, rs.m);
     const rEnd = minutes(re.h, re.m);
+    // Debe empezar después del inicio del rango y terminar antes del fin del rango
     return startMin >= rStart && endMin <= rEnd;
   });
 }
@@ -184,14 +196,17 @@ async function resolveAssignee(
   admin: ReturnType<typeof supabaseAdmin>,
   terrenoId: string,
 ) {
+  // Busca un usuario con rol admin o agent para asignar la cita
   const { data, error } = await admin
-    .from("terreno_member") // Ajustado a terreno_member según tu contexto anterior
+    .from("terreno_members")
     .select("user_id, role")
     .eq("terreno_id", terrenoId)
     .in("role", ["admin", "agent"])
-    .order("created_at", { ascending: true });
+    .order("created_at", { ascending: true })
+    .limit(1);
 
   if (error) throw new Error(error.message);
+
   const first = (data ?? [])[0] as any;
   if (!first?.user_id) {
     const err = new Error("NO_ASSIGNEE_AVAILABLE");
@@ -201,22 +216,32 @@ async function resolveAssignee(
   return String(first.user_id);
 }
 
+// --- Handler Principal POST ---
+
 export async function POST(
   req: Request,
   ctx: { params: Promise<{ slug: string }> },
 ) {
   try {
     const { slug } = ParamsSchema.parse(await ctx.params);
-    const body = BodySchema.parse(await req.json().catch(() => ({})));
+    // Catch vacío para evitar error si el body está vacío o mal formado antes de validarlo con Zod
+    const jsonBody = await req.json().catch(() => ({}));
+    const body = BodySchema.parse(jsonBody);
 
     const admin = supabaseAdmin();
+
+    // 1. Resolver Terreno y validar estado
     const { terrenoId } = await resolveTerreno(admin, slug);
 
+    // 2. Validaciones de Seguridad (Origen y Key)
     await verifyOriginAllowed(admin, terrenoId, originHost(req));
     await verifyBookingKey(admin, terrenoId, body.bookingKey);
 
+    // 3. Validar Horarios
     const { workingHours, durationMin } = await getSettings(admin, terrenoId);
 
+    // Nota: isWithinWorkingHours valida contra la configuración teórica (JSON),
+    // no contra citas existentes (eso lo hace la constraint de DB o lógica adicional si se requiere).
     if (
       !isWithinWorkingHours(workingHours, body.date, body.time, durationMin)
     ) {
@@ -225,17 +250,17 @@ export async function POST(
       throw err;
     }
 
+    // 4. Asignar Usuario
     const assignedUserId = await resolveAssignee(admin, terrenoId);
 
-    // --- CORRECCIÓN TIMEZONE (Usando DateUtils) ---
+    // 5. Calcular Fechas UTC (Usando DateUtils para Timezone Chile)
     const startsAtDate = DateUtils.toUTC(body.date, body.time);
     const startsAt = startsAtDate.toISOString();
 
-    // Calcular fin sumando minutos al objeto Date
     const endsAtDate = new Date(startsAtDate.getTime() + durationMin * 60_000);
     const endsAt = endsAtDate.toISOString();
 
-    // 1. Insertar Appointment
+    // 6. Insertar Appointment
     const { data: appointment, error } = await admin
       .from("appointments")
       .insert({
@@ -249,13 +274,14 @@ export async function POST(
         notes: body.notes || null,
         starts_at: startsAt,
         ends_at: endsAt,
-        origin_domain: originHost(req) || "unknown", // Agregamos tracking de origen si tienes la columna
+        // origin_domain: originHost(req) || "unknown", // Descomentar si tienes esta columna
       })
       .select("id, starts_at, ends_at, terreno_id")
       .single();
 
     if (error) {
       const msg = String(error.message || "");
+      // Manejo básico de conflictos si la DB tiene constraints de overlapping
       if (
         msg.toLowerCase().includes("overlap") ||
         msg.toLowerCase().includes("conflict")
@@ -268,7 +294,7 @@ export async function POST(
       throw new Error(error.message);
     }
 
-    // 2. Insertar Evento en Outbox
+    // 7. Insertar Evento en Outbox (Patrón Cron)
     if (appointment) {
       const payload = {
         appointmentId: appointment.id,
@@ -279,10 +305,10 @@ export async function POST(
           phone: body.visitorPhone || "",
         },
         schedule: {
-          startsAt: appointment.starts_at, // UTC Database
-          endsAt: appointment.ends_at, // UTC Database
-          date: body.date, // Input original usuario (YYYY-MM-DD)
-          time: body.time, // Input original usuario (HH:MM)
+          startsAt: appointment.starts_at, // UTC desde DB
+          endsAt: appointment.ends_at, // UTC desde DB
+          date: body.date, // Input original (YYYY-MM-DD)
+          time: body.time, // Input original (HH:MM)
         },
         metadata: {
           origin: originHost(req) || "unknown",
@@ -290,9 +316,10 @@ export async function POST(
       };
 
       const { error: outboxError } = await admin.from("event_outbox").insert({
-        type: EVENT_TYPES.APPOINTMENT_CREATED,
+        event_type: EVENT_TYPES.APPOINTMENT_CREATED,
         payload: payload,
         status: "pending",
+        terreno_id: appointment.terreno_id, // Importante para evitar error NOT NULL
       });
 
       if (outboxError) {
@@ -300,14 +327,16 @@ export async function POST(
           "CRITICAL: Appointment created but Event Outbox failed",
           outboxError,
         );
+        // No fallamos la request principal, pero logueamos el error crítico
       }
     }
 
+    // 8. Responder Éxito
     return NextResponse.json({
       ok: true,
       appointmentId: appointment.id,
-      startsAt: appointment.starts_at, // UTC
-      endsAt: appointment.ends_at, // UTC
+      startsAt: appointment.starts_at,
+      endsAt: appointment.ends_at,
       timezone: "America/Santiago",
     });
   } catch (e: any) {
