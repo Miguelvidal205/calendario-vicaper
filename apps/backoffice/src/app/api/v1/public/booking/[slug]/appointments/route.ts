@@ -6,6 +6,9 @@ import { sha256Hex } from "@/lib/publicBooking/bookingKey";
 import { EVENT_TYPES } from "@vicaper/events";
 import { DateUtils } from "@vicaper/contracts";
 
+// --- IMPORTANTE: Evita que Next.js cachee la respuesta de la DB ---
+export const dynamic = "force-dynamic";
+
 // --- Esquemas de Validación ---
 
 const ParamsSchema = z.object({
@@ -69,12 +72,9 @@ async function verifyOriginAllowed(
   host: string | null,
 ) {
   if (!host) return;
-
-  // DEV shortcut: permitir localhost en desarrollo
   if (process.env.NODE_ENV !== "production") {
     if (host.startsWith("localhost:") || host.startsWith("127.0.0.1:")) return;
   }
-
   const { data, error } = await admin
     .from("terreno_embed_domains")
     .select("domain")
@@ -82,11 +82,9 @@ async function verifyOriginAllowed(
     .eq("enabled", true);
 
   if (error) throw new Error(error.message);
-
   const allowed = (data ?? []).some(
     (r: any) => String(r.domain).toLowerCase() === host.toLowerCase(),
   );
-
   if (!allowed) {
     const err = new Error("ORIGIN_NOT_ALLOWED");
     (err as any).code = "ORIGIN_NOT_ALLOWED";
@@ -106,15 +104,12 @@ async function verifyBookingKey(
     .maybeSingle();
 
   if (error) throw new Error(error.message);
-
   if (!data?.booking_key_hash) {
     const err = new Error("BOOKING_KEY_NOT_SET");
     (err as any).code = "BOOKING_KEY_NOT_SET";
     throw err;
   }
-
   const got = sha256Hex(bookingKey);
-  // Comparación estricta del hash
   if (got !== String((data as any).booking_key_hash)) {
     const err = new Error("BOOKING_UNAUTHORIZED");
     (err as any).code = "BOOKING_UNAUTHORIZED";
@@ -126,6 +121,7 @@ async function getSettings(
   admin: ReturnType<typeof supabaseAdmin>,
   terrenoId: string,
 ) {
+  // CORRECCIÓN: Seleccionamos explícitamente los campos de mail
   const { data, error } = await admin
     .from("terreno_booking_settings")
     .select("working_hours, slot_duration_minutes, mail_subject, mail_body")
@@ -133,6 +129,12 @@ async function getSettings(
     .maybeSingle();
 
   if (error) throw new Error(error.message);
+
+  // DEBUG: Verificamos qué trajo la base de datos
+  console.log("🔍 [Booking] Configuración cargada:", {
+    subject: data?.mail_subject,
+    hasBody: !!data?.mail_body,
+  });
 
   const workingHours = (data?.working_hours ?? {
     mon: [{ start: "09:00", end: "18:00" }],
@@ -144,20 +146,20 @@ async function getSettings(
     sun: [],
   }) as WorkingHours;
 
-  // Default a 60 min si no viene de la DB
   const durationMin = (data as any)?.slot_duration_minutes ?? 60;
 
+  // CORRECCIÓN: Armamos el objeto mailConfig con los datos frescos
   const mailConfig = {
     subject: data?.mail_subject || "Confirmación de Visita",
     body:
       data?.mail_body ||
       "Hola {{name}}, tu visita está confirmada para el {{date}} a las {{time}}.",
   };
+
   return { workingHours, durationMin, mailConfig };
 }
 
 function dayKeyFromDate(date: string): DayKey {
-  // Asume formato YYYY-MM-DD para obtener el día de la semana
   const d = new Date(`${date}T12:00:00.000Z`);
   const dow = d.getUTCDay();
   const map: DayKey[] = ["sun", "mon", "tue", "wed", "thu", "fri", "sat"];
@@ -182,18 +184,15 @@ function isWithinWorkingHours(
 ) {
   const dayKey = dayKeyFromDate(date);
   const ranges = working[dayKey] ?? [];
-
   const t = parseHHMM(time);
   const startMin = minutes(t.h, t.m);
   const endMin = startMin + durationMin;
 
-  // Verificar si el bloque de tiempo solicitado cae dentro de algún rango disponible
   return ranges.some((r) => {
     const rs = parseHHMM(r.start);
     const re = parseHHMM(r.end);
     const rStart = minutes(rs.h, rs.m);
     const rEnd = minutes(re.h, re.m);
-    // Debe empezar después del inicio del rango y terminar antes del fin del rango
     return startMin >= rStart && endMin <= rEnd;
   });
 }
@@ -202,7 +201,6 @@ async function resolveAssignee(
   admin: ReturnType<typeof supabaseAdmin>,
   terrenoId: string,
 ) {
-  // Busca un usuario con rol admin o agent para asignar la cita
   const { data, error } = await admin
     .from("terreno_members")
     .select("user_id, role")
@@ -212,7 +210,6 @@ async function resolveAssignee(
     .limit(1);
 
   if (error) throw new Error(error.message);
-
   const first = (data ?? [])[0] as any;
   if (!first?.user_id) {
     const err = new Error("NO_ASSIGNEE_AVAILABLE");
@@ -229,28 +226,25 @@ export async function POST(
   ctx: { params: Promise<{ slug: string }> },
 ) {
   try {
-    const { slug } = ParamsSchema.parse(await ctx.params);
-    // Catch vacío para evitar error si el body está vacío o mal formado antes de validarlo con Zod
+    const { slug } = await ctx.params;
     const jsonBody = await req.json().catch(() => ({}));
     const body = BodySchema.parse(jsonBody);
 
     const admin = supabaseAdmin();
 
-    // 1. Resolver Terreno y validar estado
+    // 1. Resolver Terreno
     const { terrenoId } = await resolveTerreno(admin, slug);
 
-    // 2. Validaciones de Seguridad (Origen y Key)
+    // 2. Validaciones
     await verifyOriginAllowed(admin, terrenoId, originHost(req));
     await verifyBookingKey(admin, terrenoId, body.bookingKey);
 
-    // 3. Validar Horarios
+    // 3. Obtener Settings (AQUÍ TRAEMOS EL MAIL CONFIG)
     const { workingHours, durationMin, mailConfig } = await getSettings(
       admin,
       terrenoId,
     );
 
-    // Nota: isWithinWorkingHours valida contra la configuración teórica (JSON),
-    // no contra citas existentes (eso lo hace la constraint de DB o lógica adicional si se requiere).
     if (
       !isWithinWorkingHours(workingHours, body.date, body.time, durationMin)
     ) {
@@ -262,14 +256,13 @@ export async function POST(
     // 4. Asignar Usuario
     const assignedUserId = await resolveAssignee(admin, terrenoId);
 
-    // 5. Calcular Fechas UTC (Usando DateUtils para Timezone Chile)
+    // 5. Fechas
     const startsAtDate = DateUtils.toUTC(body.date, body.time);
     const startsAt = startsAtDate.toISOString();
-
     const endsAtDate = new Date(startsAtDate.getTime() + durationMin * 60_000);
     const endsAt = endsAtDate.toISOString();
 
-    // 6. Insertar Appointment
+    // 6. Insertar Cita
     const { data: appointment, error } = await admin
       .from("appointments")
       .insert({
@@ -283,14 +276,12 @@ export async function POST(
         notes: body.notes || null,
         starts_at: startsAt,
         ends_at: endsAt,
-        // origin_domain: originHost(req) || "unknown", // Descomentar si tienes esta columna
       })
       .select("id, starts_at, ends_at, terreno_id")
       .single();
 
     if (error) {
       const msg = String(error.message || "");
-      // Manejo básico de conflictos si la DB tiene constraints de overlapping
       if (
         msg.toLowerCase().includes("overlap") ||
         msg.toLowerCase().includes("conflict")
@@ -303,7 +294,7 @@ export async function POST(
       throw new Error(error.message);
     }
 
-    // 7. Insertar Evento en Outbox (Patrón Cron)
+    // 7. Insertar Evento en Outbox
     if (appointment) {
       const payload = {
         appointmentId: appointment.id,
@@ -320,20 +311,25 @@ export async function POST(
           time: body.time,
         },
         metadata: {
-          origin: req.headers.get("origin") || "unknown",
+          origin: originHost(req) || "unknown",
         },
-        // === NUEVO: Pasamos la configuración del correo al worker ===
+        // CORRECCIÓN: Inyectamos la configuración del correo al payload
         emailTemplate: {
           subject: mailConfig.subject,
           body: mailConfig.body,
         },
       };
 
+      console.log(
+        "📤 [Booking] Creando evento con Subject:",
+        mailConfig.subject,
+      );
+
       const { error: outboxError } = await admin.from("event_outbox").insert({
         event_type: EVENT_TYPES.APPOINTMENT_CREATED,
         payload: payload,
         status: "pending",
-        terreno_id: appointment.terreno_id, // Importante para evitar error NOT NULL
+        terreno_id: appointment.terreno_id, // CORRECCIÓN: Evita el error 'null value in terreno_id'
       });
 
       if (outboxError) {
@@ -341,11 +337,9 @@ export async function POST(
           "CRITICAL: Appointment created but Event Outbox failed",
           outboxError,
         );
-        // No fallamos la request principal, pero logueamos el error crítico
       }
     }
 
-    // 8. Responder Éxito
     return NextResponse.json({
       ok: true,
       appointmentId: appointment.id,
