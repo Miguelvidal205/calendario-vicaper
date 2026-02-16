@@ -128,7 +128,7 @@ async function getSettings(
 ) {
   const { data, error } = await admin
     .from("terreno_booking_settings")
-    .select("working_hours, slot_duration_minutes") // Intentamos traer la duración si existe columna
+    .select("working_hours, slot_duration_minutes, mail_subject, mail_body")
     .eq("terreno_id", terrenoId)
     .maybeSingle();
 
@@ -147,7 +147,13 @@ async function getSettings(
   // Default a 60 min si no viene de la DB
   const durationMin = (data as any)?.slot_duration_minutes ?? 60;
 
-  return { workingHours, durationMin };
+  const mailConfig = {
+    subject: data?.mail_subject || "Confirmación de Visita",
+    body:
+      data?.mail_body ||
+      "Hola {{name}}, tu visita está confirmada para el {{date}} a las {{time}}.",
+  };
+  return { workingHours, durationMin, mailConfig };
 }
 
 function dayKeyFromDate(date: string): DayKey {
@@ -238,7 +244,10 @@ export async function POST(
     await verifyBookingKey(admin, terrenoId, body.bookingKey);
 
     // 3. Validar Horarios
-    const { workingHours, durationMin } = await getSettings(admin, terrenoId);
+    const { workingHours, durationMin, mailConfig } = await getSettings(
+      admin,
+      terrenoId,
+    );
 
     // Nota: isWithinWorkingHours valida contra la configuración teórica (JSON),
     // no contra citas existentes (eso lo hace la constraint de DB o lógica adicional si se requiere).
@@ -305,13 +314,18 @@ export async function POST(
           phone: body.visitorPhone || "",
         },
         schedule: {
-          startsAt: appointment.starts_at, // UTC desde DB
-          endsAt: appointment.ends_at, // UTC desde DB
-          date: body.date, // Input original (YYYY-MM-DD)
-          time: body.time, // Input original (HH:MM)
+          startsAt: appointment.starts_at,
+          endsAt: appointment.ends_at,
+          date: body.date,
+          time: body.time,
         },
         metadata: {
-          origin: originHost(req) || "unknown",
+          origin: req.headers.get("origin") || "unknown",
+        },
+        // === NUEVO: Pasamos la configuración del correo al worker ===
+        emailTemplate: {
+          subject: mailConfig.subject,
+          body: mailConfig.body,
         },
       };
 
