@@ -36,12 +36,17 @@ export default function BookingSettingsForm(props: { terrenoId: string }) {
   const [timezone] = useState<"America/Santiago">("America/Santiago");
   const [slotDurationMinutes, setSlotDurationMinutes] = useState(60);
   const [bufferMinutes, setBufferMinutes] = useState(0);
-  const [workingHours, setWorkingHours] = useState<Record<DayKey, Range[]>>(emptyHours());
-
+  const [workingHours, setWorkingHours] =
+    useState<Record<DayKey, Range[]>>(emptyHours());
+  const [primaryColor, setPrimaryColor] = useState("#2563eb");
+  const [backgroundColor, setBackgroundColor] = useState("#ffffff");
+  const [logoUrl, setLogoUrl] = useState("");
   const [bookingKey, setBookingKey] = useState<string | null>(null);
 
   const [domainsLoading, setDomainsLoading] = useState(false);
-  const [domains, setDomains] = useState<Array<{ id: string; domain: string; enabled: boolean }>>([]);
+  const [domains, setDomains] = useState<
+    Array<{ id: string; domain: string; enabled: boolean }>
+  >([]);
   const [newDomain, setNewDomain] = useState("");
 
   const previewUrl = useMemo(() => {
@@ -58,29 +63,27 @@ export default function BookingSettingsForm(props: { terrenoId: string }) {
 
   useEffect(() => {
     let cancelled = false;
-
     async function loadSettings() {
       setLoading(true);
-      setError(null);
-      setNotice(null);
-
       try {
-        const res = await fetch(`/api/v1/terrenos/${props.terrenoId}/booking-settings`, {
-          method: "GET",
-          headers: { "content-type": "application/json" },
-        });
-
+        const res = await fetch(
+          `/api/v1/terrenos/${props.terrenoId}/booking-settings`,
+        );
         const data = await res.json();
-        if (!res.ok) throw new Error(data?.message ?? "No se pudo cargar la configuración");
+        if (!res.ok) throw new Error(data?.message ?? "Error");
 
-        const dto = data as BookingSettingsDto;
-
+        const dto = data as any;
         if (cancelled) return;
 
         setSlug(dto.slug);
         setBookingEnabled(dto.bookingEnabled);
         setSlotDurationMinutes(dto.slotDurationMinutes);
         setBufferMinutes(dto.bufferMinutes);
+
+        // Cargar valores de branding desde la DB
+        setPrimaryColor(dto.primaryColor ?? "#2563eb11");
+        setBackgroundColor(dto.backgroundColor ?? "#ffffff");
+        setLogoUrl(dto.logoUrl ?? "");
 
         const base = emptyHours();
         const wh = (dto.workingHours ?? {}) as Partial<Record<DayKey, Range[]>>;
@@ -93,31 +96,30 @@ export default function BookingSettingsForm(props: { terrenoId: string }) {
           sat: wh.sat ?? base.sat,
           sun: wh.sun ?? base.sun,
         });
-
         await reloadDomains();
       } catch (e: any) {
-        if (!cancelled) setError(e.message ?? "Error");
+        if (!cancelled) setError(e.message);
       } finally {
         if (!cancelled) setLoading(false);
       }
     }
-
     void loadSettings();
-
     return () => {
       cancelled = true;
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [props.terrenoId]);
 
   async function reloadDomains() {
     setDomainsLoading(true);
     setError(null);
     try {
-      const r = await fetch(`/api/v1/terrenos/${props.terrenoId}/embed-domains`, {
-        method: "GET",
-        headers: { "content-type": "application/json" },
-      });
+      const r = await fetch(
+        `/api/v1/terrenos/${props.terrenoId}/embed-domains`,
+        {
+          method: "GET",
+          headers: { "content-type": "application/json" },
+        },
+      );
       const j = await r.json();
       if (!r.ok) throw new Error(j?.message ?? "No se pudo cargar domains");
 
@@ -168,69 +170,72 @@ export default function BookingSettingsForm(props: { terrenoId: string }) {
     if (!/^[a-z0-9-]+$/.test(slug) || slug.length < 2) {
       return "Slug inválido. Usa solo letras minúsculas, números y guiones.";
     }
-    if (slotDurationMinutes < 15 || slotDurationMinutes > 240) return "Duración inválida (15–240).";
-    if (bufferMinutes < 0 || bufferMinutes > 60) return "Buffer inválido (0–60).";
+    if (slotDurationMinutes < 15 || slotDurationMinutes > 240)
+      return "Duración inválida (15–240).";
+    if (bufferMinutes < 0 || bufferMinutes > 60)
+      return "Buffer inválido (0–60).";
 
     for (const day of Object.keys(DAY_LABEL) as DayKey[]) {
       for (const r of workingHours[day]) {
-        if (!isHHmm(r.start) || !isHHmm(r.end)) return `Hora inválida en ${DAY_LABEL[day]}.`;
-        if (r.start >= r.end) return `Rango inválido en ${DAY_LABEL[day]} (start >= end).`;
+        if (!isHHmm(r.start) || !isHHmm(r.end))
+          return `Hora inválida en ${DAY_LABEL[day]}.`;
+        if (r.start >= r.end)
+          return `Rango inválido en ${DAY_LABEL[day]} (start >= end).`;
       }
     }
     return null;
   }
-
+  // Busca esta función en tu archivo original
   async function saveSettings() {
     setNotice(null);
-    const v = validate();
-    if (v) {
-      setError(v);
-      return;
-    }
-
     setSaving(true);
     setError(null);
 
     try {
-      const res = await fetch(`/api/v1/terrenos/${props.terrenoId}/booking-settings`, {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({
-          slug,
-          bookingEnabled,
-          slotDurationMinutes,
-          bufferMinutes,
-          workingHours,
-        }),
-      });
+      const res = await fetch(
+        `/api/v1/terrenos/${props.terrenoId}/booking-settings`,
+        {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({
+            slug,
+            bookingEnabled,
+            slotDurationMinutes,
+            bufferMinutes,
+            workingHours,
+            // ENVIAR LOS NUEVOS CAMPOS
+            primaryColor,
+            backgroundColor,
+            logoUrl,
+          }),
+        },
+      );
 
-      const data = await res.json().catch(() => ({}));
-      if (!res.ok) {
-        const code = data?.code;
-        if (code === "SLUG_ALREADY_TAKEN") throw new Error("Ese slug ya está en uso. Prueba otro.");
-        throw new Error(data?.message ?? "No se pudo guardar");
-      }
-
+      if (!res.ok) throw new Error("No se pudo guardar");
       setNotice("Configuración guardada correctamente ✅");
     } catch (e: any) {
-      setError(e.message ?? "Error");
+      setError(e.message);
     } finally {
       setSaving(false);
     }
   }
-
   async function rotateKey() {
     setError(null);
     setNotice(null);
     try {
-      const r = await fetch(`/api/v1/terrenos/${props.terrenoId}/booking-key/rotate`, {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-      });
+      const r = await fetch(
+        `/api/v1/terrenos/${props.terrenoId}/booking-key/rotate`,
+        {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+        },
+      );
       const j = await r.json();
       if (!r.ok) throw new Error(j?.message ?? "No se pudo generar key");
       setBookingKey(String(j.bookingKey));
-      setNotice("Nueva booking key generada. Cópiala ahora, no se volverá a mostrar.");
+      setNotice(
+        "Nueva booking key generada. Cópiala ahora, no se volverá a mostrar.",
+      );
     } catch (e: any) {
       setError(e.message ?? "Error");
     }
@@ -244,11 +249,14 @@ export default function BookingSettingsForm(props: { terrenoId: string }) {
     if (!d) return;
 
     try {
-      const r = await fetch(`/api/v1/terrenos/${props.terrenoId}/embed-domains`, {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ domain: d, enabled: true }),
-      });
+      const r = await fetch(
+        `/api/v1/terrenos/${props.terrenoId}/embed-domains`,
+        {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ domain: d, enabled: true }),
+        },
+      );
       const j = await r.json().catch(() => ({}));
       if (!r.ok) throw new Error(j?.message ?? "No se pudo agregar dominio");
 
@@ -264,9 +272,12 @@ export default function BookingSettingsForm(props: { terrenoId: string }) {
     setError(null);
     setNotice(null);
     try {
-      const r = await fetch(`/api/v1/terrenos/${props.terrenoId}/embed-domains/${domainId}`, {
-        method: "DELETE",
-      });
+      const r = await fetch(
+        `/api/v1/terrenos/${props.terrenoId}/embed-domains/${domainId}`,
+        {
+          method: "DELETE",
+        },
+      );
       const j = await r.json().catch(() => ({}));
       if (!r.ok) throw new Error(j?.message ?? "No se pudo eliminar dominio");
       await reloadDomains();
@@ -281,16 +292,26 @@ export default function BookingSettingsForm(props: { terrenoId: string }) {
     setNotice("Copiado al portapapeles ✅");
   }
 
-  if (loading) return <div style={{ color: "var(--text-muted)", padding: 20 }}>Cargando configuración...</div>;
+  if (loading)
+    return (
+      <div style={{ color: "var(--text-muted)", padding: 20 }}>
+        Cargando configuración...
+      </div>
+    );
 
   return (
     <div style={{ display: "grid", gridTemplateColumns: "1fr", gap: 24 }}>
-      
       {/* SECCIÓN: Configuración General */}
       <section className="ui-card">
         <h2 className="ui-subtitle">Configuración General</h2>
 
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))", gap: 16 }}>
+        <div
+          style={{
+            display: "grid",
+            gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))",
+            gap: 16,
+          }}
+        >
           <div>
             <label className="ui-label">Slug (URL amigable)</label>
             <input
@@ -299,7 +320,9 @@ export default function BookingSettingsForm(props: { terrenoId: string }) {
               placeholder="mi-terreno"
               className="ui-input"
             />
-            <div style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 6 }}>
+            <div
+              style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 6 }}
+            >
               Visible en: <code>/embed/booking/{slug}</code>
             </div>
           </div>
@@ -312,7 +335,11 @@ export default function BookingSettingsForm(props: { terrenoId: string }) {
               className="ui-input"
               style={{ background: "#f1f5f9", color: "#64748b" }}
             />
-            <div style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 6 }}>Fijo: Chile Continental</div>
+            <div
+              style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 6 }}
+            >
+              Fijo: Chile Continental
+            </div>
           </div>
 
           <div>
@@ -336,15 +363,31 @@ export default function BookingSettingsForm(props: { terrenoId: string }) {
           </div>
         </div>
 
-        <div style={{ marginTop: 24, display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-          <label style={{ display: "flex", gap: 10, alignItems: "center", cursor: "pointer" }}>
-            <input 
-                type="checkbox" 
-                checked={bookingEnabled} 
-                onChange={(e) => setBookingEnabled(e.target.checked)} 
-                style={{ width: 18, height: 18, accentColor: "var(--primary)" }}
+        <div
+          style={{
+            marginTop: 24,
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "space-between",
+          }}
+        >
+          <label
+            style={{
+              display: "flex",
+              gap: 10,
+              alignItems: "center",
+              cursor: "pointer",
+            }}
+          >
+            <input
+              type="checkbox"
+              checked={bookingEnabled}
+              onChange={(e) => setBookingEnabled(e.target.checked)}
+              style={{ width: 18, height: 18, accentColor: "var(--primary)" }}
             />
-            <span style={{ fontSize: 14, fontWeight: 600 }}>Habilitar Booking Público</span>
+            <span style={{ fontSize: 14, fontWeight: 600 }}>
+              Habilitar Booking Público
+            </span>
           </label>
 
           <button
@@ -364,27 +407,58 @@ export default function BookingSettingsForm(props: { terrenoId: string }) {
 
         <div style={{ display: "grid", gap: 0 }}>
           {(Object.keys(DAY_LABEL) as DayKey[]).map((day) => (
-            <div key={day} style={{ padding: "16px 0", borderBottom: "1px solid #f1f5f9" }}>
-              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
-                <div style={{ fontWeight: 600, fontSize: 14 }}>{DAY_LABEL[day]}</div>
+            <div
+              key={day}
+              style={{ padding: "16px 0", borderBottom: "1px solid #f1f5f9" }}
+            >
+              <div
+                style={{
+                  display: "flex",
+                  justifyContent: "space-between",
+                  alignItems: "center",
+                  marginBottom: 8,
+                }}
+              >
+                <div style={{ fontWeight: 600, fontSize: 14 }}>
+                  {DAY_LABEL[day]}
+                </div>
                 <button
                   onClick={() => addRange(day)}
                   className="ui-btn"
-                  style={{ padding: "4px 10px", fontSize: 12, background: "#f8fafc", border: "1px solid var(--border-color)", color: "var(--text-secondary)" }}
+                  style={{
+                    padding: "4px 10px",
+                    fontSize: 12,
+                    background: "#f8fafc",
+                    border: "1px solid var(--border-color)",
+                    color: "var(--text-secondary)",
+                  }}
                 >
                   + Agregar Horario
                 </button>
               </div>
 
               {workingHours[day].length === 0 ? (
-                <div style={{ fontSize: 13, color: "var(--text-muted)", fontStyle: "italic" }}>No disponible (Cerrado)</div>
+                <div
+                  style={{
+                    fontSize: 13,
+                    color: "var(--text-muted)",
+                    fontStyle: "italic",
+                  }}
+                >
+                  No disponible (Cerrado)
+                </div>
               ) : (
                 <div style={{ display: "grid", gap: 10 }}>
                   {workingHours[day].map((r, idx) => (
-                    <div key={idx} style={{ display: "flex", gap: 10, alignItems: "center" }}>
+                    <div
+                      key={idx}
+                      style={{ display: "flex", gap: 10, alignItems: "center" }}
+                    >
                       <input
                         value={r.start}
-                        onChange={(e) => updateRange(day, idx, { start: e.target.value })}
+                        onChange={(e) =>
+                          updateRange(day, idx, { start: e.target.value })
+                        }
                         placeholder="09:00"
                         className="ui-input"
                         style={{ maxWidth: 100, textAlign: "center" }}
@@ -392,7 +466,9 @@ export default function BookingSettingsForm(props: { terrenoId: string }) {
                       <span style={{ color: "var(--text-muted)" }}>-</span>
                       <input
                         value={r.end}
-                        onChange={(e) => updateRange(day, idx, { end: e.target.value })}
+                        onChange={(e) =>
+                          updateRange(day, idx, { end: e.target.value })
+                        }
                         placeholder="18:00"
                         className="ui-input"
                         style={{ maxWidth: 100, textAlign: "center" }}
@@ -406,7 +482,7 @@ export default function BookingSettingsForm(props: { terrenoId: string }) {
                           cursor: "pointer",
                           padding: 4,
                           fontSize: 18,
-                          marginLeft: 8
+                          marginLeft: 8,
                         }}
                         title="Eliminar rango"
                       >
@@ -421,19 +497,206 @@ export default function BookingSettingsForm(props: { terrenoId: string }) {
         </div>
       </section>
 
+      {/* SECCIÓN: Apariencia del Iframe */}
+      <section
+        className="ui-card"
+        style={{ borderLeft: `4px solid ${primaryColor}` }}
+      >
+        <h2 className="ui-subtitle">Apariencia del Iframe</h2>
+        <p
+          style={{ color: "var(--text-muted)", fontSize: 13, marginBottom: 20 }}
+        >
+          Personaliza la identidad visual de tu calendario público.
+        </p>
+
+        <div
+          style={{
+            display: "grid",
+            gridTemplateColumns: "repeat(auto-fit, minmax(280px, 1fr))",
+            gap: 24,
+          }}
+        >
+          <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+            {/* Selector Color Primario */}
+            <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+              <input
+                type="color"
+                value={primaryColor}
+                onChange={(e) => setPrimaryColor(e.target.value)}
+                style={{
+                  width: 44,
+                  height: 44,
+                  border: "none",
+                  cursor: "pointer",
+                  background: "none",
+                }}
+              />
+              <div style={{ flex: 1 }}>
+                <label className="ui-label" style={{ fontSize: 11 }}>
+                  COLOR PRINCIPAL
+                </label>
+                <input
+                  type="text"
+                  className="ui-input"
+                  value={primaryColor}
+                  onChange={(e) => setPrimaryColor(e.target.value)}
+                />
+              </div>
+            </div>
+
+            {/* Selector Color Fondo */}
+            <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+              <input
+                type="color"
+                value={backgroundColor}
+                onChange={(e) => setBackgroundColor(e.target.value)}
+                style={{
+                  width: 44,
+                  height: 44,
+                  border: "none",
+                  cursor: "pointer",
+                  background: "none",
+                }}
+              />
+              <div style={{ flex: 1 }}>
+                <label className="ui-label" style={{ fontSize: 11 }}>
+                  FONDO DEL WIDGET
+                </label>
+                <input
+                  type="text"
+                  className="ui-input"
+                  value={backgroundColor}
+                  onChange={(e) => setBackgroundColor(e.target.value)}
+                />
+              </div>
+            </div>
+
+            {/* Input URL Logo */}
+            <div>
+              <label className="ui-label" style={{ fontSize: 11 }}>
+                URL DEL LOGO (PNG/SVG)
+              </label>
+              <input
+                type="text"
+                className="ui-input"
+                placeholder="https://ejemplo.com/logo.png"
+                value={logoUrl}
+                onChange={(e) => setLogoUrl(e.target.value)}
+              />
+            </div>
+          </div>
+
+          {/* PREVISUALIZACIÓN DINÁMICA */}
+          <div
+            style={{
+              background: backgroundColor,
+              border: "1px solid var(--border-color)",
+              borderRadius: 16,
+              padding: 24,
+              display: "flex",
+              flexDirection: "column",
+              alignItems: "center",
+              justifyContent: "center",
+              minHeight: 200,
+            }}
+          >
+            <span
+              style={{
+                fontSize: 10,
+                fontWeight: 800,
+                color: "var(--text-muted)",
+                marginBottom: 16,
+                letterSpacing: 1,
+              }}
+            >
+              PREVISUALIZACIÓN
+            </span>
+            {logoUrl ? (
+              <img
+                src={logoUrl}
+                alt="Preview"
+                style={{
+                  maxHeight: 40,
+                  marginBottom: 20,
+                  objectFit: "contain",
+                }}
+              />
+            ) : (
+              <div
+                style={{
+                  fontWeight: 900,
+                  fontSize: 20,
+                  marginBottom: 20,
+                  color: primaryColor,
+                }}
+              >
+                TU LOGO
+              </div>
+            )}
+            <div style={{ display: "flex", gap: 10 }}>
+              <div
+                className="ui-btn ui-btn-primary"
+                style={{
+                  backgroundColor: primaryColor,
+                  border: "none",
+                  padding: "8px 16px",
+                  fontSize: 12,
+                  cursor: "default",
+                }}
+              >
+                Confirmar Cita
+              </div>
+              <div
+                style={{
+                  width: 32,
+                  height: 32,
+                  borderRadius: "50%",
+                  border: `2px solid ${primaryColor}`,
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  fontSize: 11,
+                  fontWeight: 700,
+                  color: primaryColor,
+                }}
+              >
+                24
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
       {/* SECCIÓN: Seguridad */}
       <section className="ui-card">
         <h2 className="ui-subtitle">Seguridad (Booking Key)</h2>
-        <p style={{ fontSize: 13, color: "var(--text-muted)", marginBottom: 16 }}>
-            Esta clave es necesaria para que el widget funcione. Si la rotas, deberás actualizar el código embebido en tu sitio web.
+        <p
+          style={{ fontSize: 13, color: "var(--text-muted)", marginBottom: 16 }}
+        >
+          Esta clave es necesaria para que el widget funcione. Si la rotas,
+          deberás actualizar el código embebido en tu sitio web.
         </p>
 
         <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
-          <button onClick={rotateKey} className="ui-btn" style={{ background: "#f8fafc", border: "1px solid var(--border-color)" }}>
+          <button
+            onClick={rotateKey}
+            className="ui-btn"
+            style={{
+              background: "#f8fafc",
+              border: "1px solid var(--border-color)",
+            }}
+          >
             🔄 Generar nueva Key
           </button>
           {bookingKey && (
-            <button onClick={() => copy(bookingKey)} className="ui-btn" style={{ background: "#f8fafc", border: "1px solid var(--border-color)" }}>
+            <button
+              onClick={() => copy(bookingKey)}
+              className="ui-btn"
+              style={{
+                background: "#f8fafc",
+                border: "1px solid var(--border-color)",
+              }}
+            >
               📋 Copiar Key
             </button>
           )}
@@ -442,16 +705,34 @@ export default function BookingSettingsForm(props: { terrenoId: string }) {
         {bookingKey ? (
           <div style={{ marginTop: 16 }}>
             <div className="ui-label">Tu nueva Booking Key:</div>
-            <div style={{ background: "#fffbeb", padding: 12, borderRadius: 8, border: "1px solid #fcd34d", fontFamily: "monospace", color: "#b45309", wordBreak: "break-all" }}>
-                {bookingKey}
+            <div
+              style={{
+                background: "#fffbeb",
+                padding: 12,
+                borderRadius: 8,
+                border: "1px solid #fcd34d",
+                fontFamily: "monospace",
+                color: "#b45309",
+                wordBreak: "break-all",
+              }}
+            >
+              {bookingKey}
             </div>
             <div style={{ fontSize: 11, color: "#b45309", marginTop: 4 }}>
-                ⚠️ Cópiala ahora. Por seguridad, no se volverá a mostrar completa.
+              ⚠️ Cópiala ahora. Por seguridad, no se volverá a mostrar completa.
             </div>
           </div>
         ) : (
-          <div style={{ marginTop: 16, fontSize: 13, color: "var(--text-muted)", fontStyle: "italic" }}>
-            (No hay key visible. Si ya tienes una configurada y funciona, no necesitas generar otra a menos que haya sido comprometida).
+          <div
+            style={{
+              marginTop: 16,
+              fontSize: 13,
+              color: "var(--text-muted)",
+              fontStyle: "italic",
+            }}
+          >
+            (No hay key visible. Si ya tienes una configurada y funciona, no
+            necesitas generar otra a menos que haya sido comprometida).
           </div>
         )}
       </section>
@@ -459,8 +740,11 @@ export default function BookingSettingsForm(props: { terrenoId: string }) {
       {/* SECCIÓN: Dominios */}
       <section className="ui-card">
         <h2 className="ui-subtitle">Dominios Permitidos (CORS)</h2>
-        <p style={{ fontSize: 13, color: "var(--text-muted)", marginBottom: 16 }}>
-          Especifica qué dominios pueden mostrar tu calendario (ej: <code>localhost:3000</code> o <code>mitiendas.cl</code>).
+        <p
+          style={{ fontSize: 13, color: "var(--text-muted)", marginBottom: 16 }}
+        >
+          Especifica qué dominios pueden mostrar tu calendario (ej:{" "}
+          <code>localhost:3000</code> o <code>mitiendas.cl</code>).
         </p>
 
         <div style={{ display: "flex", gap: 10, marginBottom: 16 }}>
@@ -470,33 +754,80 @@ export default function BookingSettingsForm(props: { terrenoId: string }) {
             placeholder="ej: misitio.com"
             className="ui-input"
           />
-          <button onClick={addDomain} className="ui-btn" style={{ background: "#0f172a", color: "white" }}>
+          <button
+            onClick={addDomain}
+            className="ui-btn"
+            style={{ background: "#0f172a", color: "white" }}
+          >
             Agregar
           </button>
-          <button onClick={reloadDomains} disabled={domainsLoading} className="ui-btn" style={{ border: "1px solid var(--border-color)", background: "white" }}>
+          <button
+            onClick={reloadDomains}
+            disabled={domainsLoading}
+            className="ui-btn"
+            style={{
+              border: "1px solid var(--border-color)",
+              background: "white",
+            }}
+          >
             ↻
           </button>
         </div>
 
         <div style={{ display: "grid", gap: 8 }}>
           {domains.length === 0 ? (
-             <div style={{ padding: 12, textAlign: "center", background: "#f8fafc", borderRadius: 8, fontSize: 13, color: "var(--text-muted)" }}>
-                No hay dominios configurados.
-             </div>
+            <div
+              style={{
+                padding: 12,
+                textAlign: "center",
+                background: "#f8fafc",
+                borderRadius: 8,
+                fontSize: 13,
+                color: "var(--text-muted)",
+              }}
+            >
+              No hay dominios configurados.
+            </div>
           ) : (
-              domains.map((d) => (
-                <div key={d.id} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "8px 12px", background: "#f8fafc", borderRadius: 8, border: "1px solid var(--border-color)" }}>
-                  <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                     <span style={{ fontFamily: "monospace", fontSize: 13 }}>{d.domain}</span>
-                     <span className={`ui-badge ${d.enabled ? 'completed' : 'cancelled'}`} style={{ fontSize: 10, padding: "2px 6px" }}>
-                        {d.enabled ? "ACTIVO" : "INACTIVO"}
-                     </span>
-                  </div>
-                  <button onClick={() => deleteDomain(d.id)} style={{ background: "transparent", border: "none", color: "#ef4444", cursor: "pointer", fontSize: 12, fontWeight: 600 }}>
-                    Eliminar
-                  </button>
+            domains.map((d) => (
+              <div
+                key={d.id}
+                style={{
+                  display: "flex",
+                  justifyContent: "space-between",
+                  alignItems: "center",
+                  padding: "8px 12px",
+                  background: "#f8fafc",
+                  borderRadius: 8,
+                  border: "1px solid var(--border-color)",
+                }}
+              >
+                <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                  <span style={{ fontFamily: "monospace", fontSize: 13 }}>
+                    {d.domain}
+                  </span>
+                  <span
+                    className={`ui-badge ${d.enabled ? "completed" : "cancelled"}`}
+                    style={{ fontSize: 10, padding: "2px 6px" }}
+                  >
+                    {d.enabled ? "ACTIVO" : "INACTIVO"}
+                  </span>
                 </div>
-              ))
+                <button
+                  onClick={() => deleteDomain(d.id)}
+                  style={{
+                    background: "transparent",
+                    border: "none",
+                    color: "#ef4444",
+                    cursor: "pointer",
+                    fontSize: 12,
+                    fontWeight: 600,
+                  }}
+                >
+                  Eliminar
+                </button>
+              </div>
+            ))
           )}
         </div>
       </section>
@@ -504,43 +835,67 @@ export default function BookingSettingsForm(props: { terrenoId: string }) {
       {/* SECCIÓN: Preview */}
       <section className="ui-card">
         <h2 className="ui-subtitle">Integración</h2>
-        
+
         <div style={{ marginBottom: 16 }}>
-            <div className="ui-label">Link Directo / Preview</div>
-            <div style={{ display: "flex", gap: 8 }}>
-                <input readOnly value={previewUrl} className="ui-input" style={{ background: "#f1f5f9", color: "#64748b" }} />
-                <button onClick={() => window.open(previewUrl, "_blank")} className="ui-btn" style={{ border: "1px solid var(--border-color)", background: "white" }}>
-                    Abrir ↗
-                </button>
-            </div>
+          <div className="ui-label">Link Directo / Preview</div>
+          <div style={{ display: "flex", gap: 8 }}>
+            <input
+              readOnly
+              value={previewUrl}
+              className="ui-input"
+              style={{ background: "#f1f5f9", color: "#64748b" }}
+            />
+            <button
+              onClick={() => window.open(previewUrl, "_blank")}
+              className="ui-btn"
+              style={{
+                border: "1px solid var(--border-color)",
+                background: "white",
+              }}
+            >
+              Abrir ↗
+            </button>
+          </div>
         </div>
 
         <div>
-            <div className="ui-label">Código Iframe (Copiar y pegar)</div>
-            <div style={{ position: "relative" }}>
-                <textarea 
-                    readOnly 
-                    value={iframeSnippet} 
-                    className="ui-input" 
-                    style={{ height: 100, fontFamily: "monospace", fontSize: 12, background: "#0f172a", color: "#e2e8f0", resize: "none" }} 
-                />
-                <button 
-                    onClick={() => copy(iframeSnippet)}
-                    className="ui-btn ui-btn-primary"
-                    style={{ position: "absolute", bottom: 10, right: 10, padding: "4px 10px", fontSize: 12 }}
-                >
-                    Copiar Código
-                </button>
-            </div>
+          <div className="ui-label">Código Iframe (Copiar y pegar)</div>
+          <div style={{ position: "relative" }}>
+            <textarea
+              readOnly
+              value={iframeSnippet}
+              className="ui-input"
+              style={{
+                height: 100,
+                fontFamily: "monospace",
+                fontSize: 12,
+                background: "#0f172a",
+                color: "#e2e8f0",
+                resize: "none",
+              }}
+            />
+            <button
+              onClick={() => copy(iframeSnippet)}
+              className="ui-btn ui-btn-primary"
+              style={{
+                position: "absolute",
+                bottom: 10,
+                right: 10,
+                padding: "4px 10px",
+                fontSize: 12,
+              }}
+            >
+              Copiar Código
+            </button>
+          </div>
         </div>
 
         {/* FEEDBACK GLOBAL */}
         <div style={{ marginTop: 20 }}>
-            {error && <div className="ui-feedback error">{error}</div>}
-            {notice && <div className="ui-feedback success">{notice}</div>}
+          {error && <div className="ui-feedback error">{error}</div>}
+          {notice && <div className="ui-feedback success">{notice}</div>}
         </div>
       </section>
-
     </div>
   );
 }

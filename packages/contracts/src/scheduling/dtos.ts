@@ -7,6 +7,31 @@ export const AppointmentStatus = z.enum([
   "no_show",
   "cancelled",
 ]);
+const BrandingSchema = {
+  primaryColor: z.string().default("#2563eb"),
+  backgroundColor: z.string().default("#ffffff"),
+  logoUrl: z.string().optional().or(z.literal("")),
+};
+
+export const BookingSettingsGetResponse = z.object({
+  terrenoId: UuidString,
+  slug: z.string(),
+  bookingEnabled: z.boolean(),
+  timezone: z.string(),
+  slotDurationMinutes: z.number(),
+  bufferMinutes: z.number(),
+  workingHours: z.any(), // Podrías tiparlo más estrictamente si lo deseas
+  ...BrandingSchema, // Inyectamos los campos de branding
+});
+
+export const BookingSettingsUpdateRequest = z.object({
+  slug: z.string(),
+  bookingEnabled: z.boolean(),
+  slotDurationMinutes: z.number(),
+  bufferMinutes: z.number(),
+  workingHours: z.any(),
+  ...BrandingSchema, // Inyectamos los campos de branding
+});
 
 export const AppointmentDto = z.object({
   id: UuidString,

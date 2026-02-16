@@ -42,22 +42,22 @@ export const BookingSettingsDto = z.object({
 export type BookingSettingsDto = z.infer<typeof BookingSettingsDto>;
 
 // ✅ estos dos deben existir con estos nombres
-export const BookingSettingsGetResponse = BookingSettingsDto;
+// export const BookingSettingsGetResponse = BookingSettingsDto;
 
-export const BookingSettingsUpdateRequest = z.object({
-  slug: z
-    .string()
-    .min(2)
-    .max(80)
-    .regex(/^[a-z0-9-]+$/),
-  bookingEnabled: z.boolean(),
-  slotDurationMinutes: z.number().int().min(15).max(240),
-  bufferMinutes: z.number().int().min(0).max(60),
-  workingHours: WorkingHours,
-});
-export type BookingSettingsUpdateRequest = z.infer<
-  typeof BookingSettingsUpdateRequest
->;
+// export const BookingSettingsUpdateRequest = z.object({
+//   slug: z
+//     .string()
+//     .min(2)
+//     .max(80)
+//     .regex(/^[a-z0-9-]+$/),
+//   bookingEnabled: z.boolean(),
+//   slotDurationMinutes: z.number().int().min(15).max(240),
+//   bufferMinutes: z.number().int().min(0).max(60),
+//   workingHours: WorkingHours,
+// });
+// export type BookingSettingsUpdateRequest = z.infer<
+//   typeof BookingSettingsUpdateRequest
+// >;
 export const EmbedDomainDto = z.object({
   id: z.string().uuid(),
   domain: z.string().min(1).max(255),

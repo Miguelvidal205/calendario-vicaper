@@ -26,8 +26,6 @@ async function requireUser() {
 
 async function requireTerrenoAdmin(userId: string, terrenoId: string) {
   const sb = await supabaseServer();
-
-  // RLS debería permitir al menos ver su membership
   const { data, error } = await sb
     .from("terreno_members")
     .select("role")
@@ -36,12 +34,7 @@ async function requireTerrenoAdmin(userId: string, terrenoId: string) {
     .maybeSingle();
 
   if (error) throw new Error(error.message);
-  if (!data) {
-    const err = new Error("FORBIDDEN");
-    (err as any).code = "FORBIDDEN";
-    throw err;
-  }
-  if (data.role !== "admin") {
+  if (!data || data.role !== "admin") {
     const err = new Error("FORBIDDEN_ADMIN_ONLY");
     (err as any).code = "FORBIDDEN_ADMIN_ONLY";
     throw err;
@@ -67,7 +60,6 @@ export async function GET(
   try {
     const user = await requireUser();
     const { id } = ParamsSchema.parse(await ctx.params);
-
     await requireTerrenoAdmin(user.id, id);
 
     const admin = supabaseAdmin();
@@ -82,7 +74,9 @@ export async function GET(
 
     const { data: settings, error: sErr } = await admin
       .from("terreno_booking_settings")
-      .select("slot_duration_minutes, buffer_minutes, working_hours")
+      .select(
+        "slot_duration_minutes, buffer_minutes, working_hours, primary_color, background_color, logo_url",
+      )
       .eq("terreno_id", id)
       .maybeSingle();
 
@@ -92,10 +86,14 @@ export async function GET(
       terrenoId: terreno.id,
       slug: (terreno.slug as string | null) ?? "demo-terreno",
       bookingEnabled: Boolean(terreno.booking_enabled),
-      timezone: "America/Santiago" as const, // forzamos Chile
+      timezone: "America/Santiago" as const,
       slotDurationMinutes: Number(settings?.slot_duration_minutes ?? 60),
       bufferMinutes: Number(settings?.buffer_minutes ?? 0),
       workingHours: (settings?.working_hours ?? defaultWorkingHours()) as any,
+      // Mapeo de Snake Case (DB) a Camel Case (Contract)
+      primaryColor: settings?.primary_color ?? "#2563eb",
+      backgroundColor: settings?.background_color ?? "#ffffff",
+      logoUrl: settings?.logo_url ?? "",
     });
 
     return NextResponse.json(resp);
@@ -118,7 +116,7 @@ export async function POST(
 
     const admin = supabaseAdmin();
 
-    // 1) Actualiza terrenos (slug + enabled + timezone fijo Chile)
+    // 1) Actualiza terrenos
     const { error: upTerrenoErr } = await admin
       .from("terrenos")
       .update({
@@ -129,7 +127,6 @@ export async function POST(
       .eq("id", id);
 
     if (upTerrenoErr) {
-      // slug unique violation típico
       const msg = upTerrenoErr.message ?? "";
       if (
         msg.toLowerCase().includes("duplicate") ||
@@ -142,7 +139,7 @@ export async function POST(
       throw new Error(upTerrenoErr.message);
     }
 
-    // 2) Upsert settings
+    // 2) Upsert settings incluyendo BRANDING
     const { error: upSettingsErr } = await admin
       .from("terreno_booking_settings")
       .upsert(
@@ -151,6 +148,10 @@ export async function POST(
           slot_duration_minutes: parsed.slotDurationMinutes,
           buffer_minutes: parsed.bufferMinutes,
           working_hours: parsed.workingHours,
+          // Mapeo de Camel Case (Contract) a Snake Case (DB)
+          primary_color: parsed.primaryColor,
+          background_color: parsed.backgroundColor,
+          logo_url: parsed.logoUrl,
           updated_at: new Date().toISOString(),
         },
         { onConflict: "terreno_id" },

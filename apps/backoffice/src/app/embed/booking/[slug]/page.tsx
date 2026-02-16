@@ -84,7 +84,7 @@ function buildMonthGridUTC(monthStartUTC: Date) {
   const dowMon0 = (dowSun0 + 6) % 7; // Ajuste para empezar Lunes
   const gridStart = new Date(first);
   gridStart.setUTCDate(first.getUTCDate() - dowMon0);
-  
+
   const days: { ymd: string; inMonth: boolean }[] = [];
   for (let i = 0; i < 42; i++) {
     const d = new Date(gridStart);
@@ -107,15 +107,27 @@ export default function EmbedBookingPage() {
 
   // 1. Calcular HOY para validaciones
   const initialDay = useMemo(() => todayChileYMD(), []);
-  
+
   // Estado del Calendario
   const [selectedDay, setSelectedDay] = useState(initialDay);
-  const [monthUTC, setMonthUTC] = useState<Date>(() => startOfMonthUTC(initialDay));
+  const [monthUTC, setMonthUTC] = useState<Date>(() =>
+    startOfMonthUTC(initialDay),
+  );
   const monthGrid = useMemo(() => buildMonthGridUTC(monthUTC), [monthUTC]);
 
   // VALIDACIÓN: ¿Podemos retroceder de mes?
-  const actualCurrentMonthStart = useMemo(() => startOfMonthUTC(initialDay), [initialDay]);
+  const actualCurrentMonthStart = useMemo(
+    () => startOfMonthUTC(initialDay),
+    [initialDay],
+  );
   const canGoBack = monthUTC.getTime() > actualCurrentMonthStart.getTime();
+
+  // --- ESTADO DE BRANDING ---
+  const [config, setConfig] = useState({
+    primaryColor: "#2563eb",
+    backgroundColor: "#ffffff",
+    logoUrl: "",
+  });
 
   // Estado de Datos (Slots)
   const [available, setAvailable] = useState<Slot[]>([]);
@@ -133,9 +145,12 @@ export default function EmbedBookingPage() {
   const [submitting, setSubmitting] = useState(false);
   const [successId, setSuccessId] = useState<string | null>(null);
 
-  const pickedDayLabel = useMemo(() => fmtChileDateLabel(selectedDay), [selectedDay]);
+  const pickedDayLabel = useMemo(
+    () => fmtChileDateLabel(selectedDay),
+    [selectedDay],
+  );
 
-  // Carga de disponibilidad
+  // Carga de disponibilidad y Configuración Visual
   async function reload() {
     if (!slug) return;
     if (!bookingKey) {
@@ -144,19 +159,35 @@ export default function EmbedBookingPage() {
     }
     setLoading(true);
     setMsg("");
-    setPickedSlot(null); 
-    
+    setPickedSlot(null);
+
     try {
-      const [resAvail, resTaken] = await Promise.all([
-        fetch(`/api/v1/public/booking/${slug}/availability?date=${selectedDay}&key=${bookingKey}`),
-        fetch(`/api/v1/public/booking/${slug}/taken?date=${selectedDay}&key=${bookingKey}`)
+      const [resConfig, resAvail, resTaken] = await Promise.all([
+        fetch(`/api/v1/public/booking/${slug}/settings?key=${bookingKey}`),
+        fetch(
+          `/api/v1/public/booking/${slug}/availability?date=${selectedDay}&key=${bookingKey}`,
+        ),
+        fetch(
+          `/api/v1/public/booking/${slug}/taken?date=${selectedDay}&key=${bookingKey}`,
+        ),
       ]);
 
+      const dataConfig = await resConfig.json();
       const dataAvail = await resAvail.json();
       const dataTaken = await resTaken.json();
 
-      if (!resAvail.ok) throw new Error(dataAvail.message || "Error cargando horarios");
-      if (!resTaken.ok) throw new Error(dataTaken.message || "Error cargando ocupados");
+      if (dataConfig.config) {
+        setConfig({
+          primaryColor: dataConfig.config.primaryColor || "#2563eb",
+          backgroundColor: dataConfig.config.backgroundColor || "#ffffff",
+          logoUrl: dataConfig.config.logoUrl || "",
+        });
+      }
+
+      if (!resAvail.ok)
+        throw new Error(dataAvail.message || "Error cargando horarios");
+      if (!resTaken.ok)
+        throw new Error(dataTaken.message || "Error cargando ocupados");
 
       setAvailable(dataAvail.slots || []);
       setTaken(dataTaken.taken || []);
@@ -168,13 +199,11 @@ export default function EmbedBookingPage() {
     }
   }
 
-  // Sync del mes del calendario con el día seleccionado (solo si el usuario cambia drásticamente)
+  // Sync del mes del calendario con el día seleccionado
   useEffect(() => {
     const p = parseYMD(selectedDay);
     if (!p) return;
     const monthStart = new Date(Date.UTC(p.y, p.m - 1, 1));
-    // Solo cambiamos la vista si el día seleccionado está fuera de la vista actual
-    // (Opcional: puedes quitar esto si prefieres navegación manual estricta)
     if (monthStart.getTime() !== monthUTC.getTime()) setMonthUTC(monthStart);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedDay]);
@@ -189,10 +218,11 @@ export default function EmbedBookingPage() {
   async function submitBooking() {
     setMsg("");
     if (!pickedSlot) return setMsg("Selecciona un horario disponible.");
-    if (visitorName.trim().length < 3) return setMsg("Ingresa tu nombre completo.");
+    if (visitorName.trim().length < 3)
+      return setMsg("Ingresa tu nombre completo.");
     if (!visitorEmail.includes("@")) return setMsg("Ingresa un email válido.");
-    
-    const timeCH = fmtChileTime(pickedSlot.startsAt); 
+
+    const timeCH = fmtChileTime(pickedSlot.startsAt);
 
     setSubmitting(true);
     try {
@@ -212,15 +242,16 @@ export default function EmbedBookingPage() {
 
       const j = await res.json();
       if (!res.ok) {
-        if (j.code === "CONFLICT_OVERLAP") throw new Error("¡Ups! Alguien acaba de tomar este horario.");
-        if (j.code === "OUTSIDE_WORKING_HOURS") throw new Error("El horario ya no está disponible.");
+        if (j.code === "CONFLICT_OVERLAP")
+          throw new Error("¡Ups! Alguien acaba de tomar este horario.");
+        if (j.code === "OUTSIDE_WORKING_HOURS")
+          throw new Error("El horario ya no está disponible.");
         throw new Error(j.message || "No se pudo agendar.");
       }
 
       setSuccessId(j.appointmentId);
       setMsgType("success");
       setMsg("Reserva confirmada exitosamente.");
-
     } catch (e: any) {
       setMsgType("error");
       setMsg(e.message || "Error desconocido");
@@ -230,21 +261,71 @@ export default function EmbedBookingPage() {
     }
   }
 
+  // --- VARIABLES CSS DINÁMICAS ---
+  const brandingStyles = {
+    "--primary": config.primaryColor,
+    "--bg-page": config.backgroundColor,
+    "--primary-soft": `${config.primaryColor}20`,
+  } as React.CSSProperties;
+
   // --- RENDER SUCCESS ---
   if (successId) {
     return (
-      <div style={{ fontFamily: "system-ui, sans-serif", minHeight: "100vh", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", padding: 24, textAlign: "center", background: "#fff", color: "#1e293b" }}>
-        <div style={{ width: 64, height: 64, background: "#dcfce7", color: "#16a34a", borderRadius: "50%", display: "flex", alignItems: "center", justifyContent: "center", marginBottom: 16, fontSize: 32 }}>
+      <div
+        style={{
+          ...brandingStyles,
+          fontFamily: "system-ui, sans-serif",
+          minHeight: "100vh",
+          display: "flex",
+          flexDirection: "column",
+          alignItems: "center",
+          justifyContent: "center",
+          padding: 24,
+          textAlign: "center",
+          background: "var(--bg-page)",
+          color: "#1e293b",
+        }}
+      >
+        <div
+          style={{
+            width: 64,
+            height: 64,
+            background: "#dcfce7",
+            color: "#16a34a",
+            borderRadius: "50%",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            marginBottom: 16,
+            fontSize: 32,
+          }}
+        >
           ✓
         </div>
-        <h2 style={{ fontSize: 24, fontWeight: 700, marginBottom: 8 }}>¡Reserva Confirmada!</h2>
+        <h2 style={{ fontSize: 24, fontWeight: 700, marginBottom: 8 }}>
+          ¡Reserva Confirmada!
+        </h2>
         <p style={{ color: "#475569", marginBottom: 24 }}>
-          Te esperamos el <strong>{pickedDayLabel}</strong> a las <strong>{pickedSlot ? fmtChileTime(pickedSlot.startsAt) : ""} hrs</strong>.
+          Te esperamos el <strong>{pickedDayLabel}</strong> a las{" "}
+          <strong>
+            {pickedSlot ? fmtChileTime(pickedSlot.startsAt) : ""} hrs
+          </strong>
+          .
         </p>
-        <p style={{ fontSize: 13, color: "#94a3b8", marginBottom: 32 }}>Hemos enviado los detalles a {visitorEmail}</p>
-        <button 
-          onClick={() => window.location.reload()} 
-          style={{ padding: "10px 24px", background: "#2563eb", color: "white", borderRadius: 8, border: "none", fontWeight: 600, cursor: "pointer" }}
+        <p style={{ fontSize: 13, color: "#94a3b8", marginBottom: 32 }}>
+          Hemos enviado los detalles a {visitorEmail}
+        </p>
+        <button
+          onClick={() => window.location.reload()}
+          style={{
+            padding: "10px 24px",
+            background: "var(--primary)",
+            color: "white",
+            borderRadius: 8,
+            border: "none",
+            fontWeight: 600,
+            cursor: "pointer",
+          }}
         >
           Agendar otra visita
         </button>
@@ -253,79 +334,188 @@ export default function EmbedBookingPage() {
   }
 
   const inputStyle = {
-    padding: "10px 12px", borderRadius: "8px", border: "1px solid #e2e8f0",
-    background: "#fff", color: "#1e293b", fontSize: "14px", width: "100%",
-    boxSizing: "border-box" as const, outline: "none"
+    padding: "10px 12px",
+    borderRadius: "8px",
+    border: "1px solid #e2e8f0",
+    background: "#fff",
+    color: "#1e293b",
+    fontSize: "14px",
+    width: "100%",
+    boxSizing: "border-box" as const,
+    outline: "none",
   };
 
   return (
-    <div style={{ fontFamily: "system-ui, sans-serif", background: "#ffffff", color: "#1e293b", minHeight: "100vh", padding: "20px 14px" }}>
+    <div
+      style={{
+        ...brandingStyles,
+        fontFamily: "system-ui, sans-serif",
+        background: "var(--bg-page)",
+        color: "#1e293b",
+        minHeight: "100vh",
+        padding: "20px 14px",
+      }}
+    >
       <div style={{ maxWidth: 500, margin: "0 auto" }}>
-        
         {/* Header */}
-        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 24 }}>
-          <div style={{ color: "#2563eb", fontWeight: 800, fontSize: 20 }}>EMPRESA</div>
-          <div style={{ fontSize: 12, background: "#f1f5f9", padding: "4px 8px", borderRadius: "12px", color: "#64748b", fontWeight: 600 }}>Hora Chile</div>
+        <div
+          style={{
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "space-between",
+            marginBottom: 24,
+          }}
+        >
+          {config.logoUrl ? (
+            <img
+              src={config.logoUrl}
+              alt="Logo"
+              style={{ maxHeight: 40, maxWidth: 200, objectFit: "contain" }}
+            />
+          ) : (
+            <div
+              style={{ color: "var(--primary)", fontWeight: 800, fontSize: 20 }}
+            >
+              PROYECTO
+            </div>
+          )}
+          <div
+            style={{
+              fontSize: 12,
+              background: "#f1f5f9",
+              padding: "4px 8px",
+              borderRadius: "12px",
+              color: "#64748b",
+              fontWeight: 600,
+            }}
+          >
+            Hora Chile
+          </div>
         </div>
 
         {/* Calendar Grid */}
-        <div style={{ background: "#fff", border: "1px solid #e2e8f0", borderRadius: 20, padding: 20, boxShadow: "0 1px 3px 0 rgb(0 0 0 / 0.05)" }}>
-          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 20 }}>
-            {/* Botón Atrás: Deshabilitado si estamos en el mes actual */}
-            <button 
-              onClick={() => canGoBack && setMonthUTC((d) => addMonthsUTC(d, -1))} 
+        <div
+          style={{
+            background: "#fff",
+            border: "1px solid #e2e8f0",
+            borderRadius: 20,
+            padding: 20,
+            boxShadow: "0 1px 3px 0 rgb(0 0 0 / 0.05)",
+          }}
+        >
+          <div
+            style={{
+              display: "flex",
+              justifyContent: "space-between",
+              alignItems: "center",
+              marginBottom: 20,
+            }}
+          >
+            <button
+              onClick={() =>
+                canGoBack && setMonthUTC((d) => addMonthsUTC(d, -1))
+              }
               disabled={!canGoBack}
-              style={{ 
-                background: canGoBack ? "#f8fafc" : "#f1f5f9", 
-                border: "1px solid #e2e8f0", padding: "8px 12px", borderRadius: "8px", 
-                cursor: canGoBack ? "pointer" : "not-allowed", 
-                color: canGoBack ? "#475569" : "#cbd5e1" 
+              style={{
+                background: "none",
+                border: "none",
+                cursor: canGoBack ? "pointer" : "not-allowed",
+                color: canGoBack ? "#475569" : "#cbd5e1",
+                fontSize: 18,
               }}
-            > 
-              ❮ 
+            >
+              ❮
             </button>
-            <div style={{ textTransform: "capitalize", fontWeight: 700, fontSize: 16, color: "#0f172a" }}>{monthTitleChile(monthUTC)}</div>
-            <button 
-              onClick={() => setMonthUTC((d) => addMonthsUTC(d, +1))} 
-              style={{ background: "#f8fafc", border: "1px solid #e2e8f0", padding: "8px 12px", borderRadius: "8px", cursor: "pointer", color: "#475569" }}
-            > 
-              ❯ 
+            <div
+              style={{
+                textTransform: "capitalize",
+                fontWeight: 700,
+                fontSize: 16,
+                color: "#0f172a",
+              }}
+            >
+              {monthTitleChile(monthUTC)}
+            </div>
+            <button
+              onClick={() => setMonthUTC((d) => addMonthsUTC(d, +1))}
+              style={{
+                background: "none",
+                border: "none",
+                cursor: "pointer",
+                color: "#475569",
+                fontSize: 18,
+              }}
+            >
+              ❯
             </button>
           </div>
 
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(7, 1fr)", gap: 4, marginBottom: 8 }}>
+          <div
+            style={{
+              display: "grid",
+              gridTemplateColumns: "repeat(7, 1fr)",
+              gap: 4,
+              marginBottom: 8,
+            }}
+          >
             {["Lu", "Ma", "Mi", "Ju", "Vi", "Sa", "Do"].map((x) => (
-              <div key={x} style={{ fontSize: 11, color: "#94a3b8", textAlign: "center", fontWeight: 600 }}>{x}</div>
+              <div
+                key={x}
+                style={{
+                  fontSize: 11,
+                  color: "#94a3b8",
+                  textAlign: "center",
+                  fontWeight: 600,
+                }}
+              >
+                {x}
+              </div>
             ))}
           </div>
 
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(7, 1fr)", gap: 4 }}>
+          <div
+            style={{
+              display: "grid",
+              gridTemplateColumns: "repeat(7, 1fr)",
+              gap: 4,
+            }}
+          >
             {monthGrid.map((d) => {
               const isSelected = d.ymd === selectedDay;
-              const isPast = d.ymd < initialDay; // Validar si es día pasado
+              const isPast = d.ymd < initialDay;
 
               return (
                 <button
                   key={d.ymd}
                   disabled={isPast}
-                  onClick={() => { 
+                  onClick={() => {
                     if (!isPast) {
-                        setSelectedDay(d.ymd); 
-                        setPickedSlot(null); 
+                      setSelectedDay(d.ymd);
+                      setPickedSlot(null);
                     }
                   }}
                   style={{
-                    padding: "10px 0", borderRadius: "10px",
-                    border: isSelected ? "2px solid #2563eb" : "1px solid transparent",
-                    background: isSelected ? "#eff6ff" : "transparent",
-                    color: isPast 
-                        ? "#e2e8f0" // Muy claro para pasados
-                        : isSelected 
-                            ? "#1d4ed8" 
-                            : (d.inMonth ? "#334155" : "#cbd5e1"),
-                    cursor: isPast ? "default" : "pointer", 
-                    fontSize: 14, fontWeight: isSelected ? 700 : 500,
-                    textDecoration: isPast ? "line-through" : "none"
+                    padding: "10px 0",
+                    borderRadius: "10px",
+                    border: isSelected
+                      ? "2px solid var(--primary)"
+                      : "1px solid transparent",
+                    background: isSelected
+                      ? "var(--primary-soft)"
+                      : "transparent",
+                    color: isPast
+                      ? "#e2e8f0"
+                      : isSelected
+                        ? "var(--primary)"
+                        : d.inMonth
+                          ? "#334155"
+                          : "#cbd5e1",
+                    cursor: isPast ? "default" : "pointer",
+                    fontSize: 14,
+                    fontWeight: isSelected ? 700 : 500,
+                    textDecoration: isPast ? "line-through" : "none",
+                    outline: "none",
+                    transition: "all 0.2s",
                   }}
                 >
                   {d.ymd.slice(-2)}
@@ -335,64 +525,208 @@ export default function EmbedBookingPage() {
           </div>
         </div>
 
-        <div style={{ marginTop: 24, fontWeight: 700, fontSize: 15, color: "#0f172a", textTransform: "capitalize" }}>{pickedDayLabel}</div>
+        <div
+          style={{
+            marginTop: 24,
+            fontWeight: 700,
+            fontSize: 15,
+            color: "#0f172a",
+            textTransform: "capitalize",
+          }}
+        >
+          {pickedDayLabel}
+        </div>
 
         {/* Slots */}
-        <div style={{ marginTop: 12, display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+        <div
+          style={{
+            marginTop: 12,
+            display: "grid",
+            gridTemplateColumns: "1fr 1fr",
+            gap: 12,
+          }}
+        >
           {/* Disponibles */}
-          <div style={{ background: "#f8fafc", border: "1px solid #e2e8f0", borderRadius: 16, padding: 16 }}>
-            <div style={{ fontWeight: 700, fontSize: 13, marginBottom: 12, color: "#16a34a" }}>● Disponibles</div>
-            {loading ? <div style={{ fontSize: 12, color: "#94a3b8" }}>Cargando...</div> : (
-               <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(60px, 1fr))", gap: 8 }}>
-                 {available.map((s) => {
-                   const active = pickedSlot?.startsAt === s.startsAt;
-                   return (
-                     <button
-                       key={s.startsAt}
-                       onClick={() => setPickedSlot(s)}
-                       style={{
-                         textAlign: "center", padding: "6px", borderRadius: "6px",
-                         border: active ? "2px solid #2563eb" : "1px solid #cbd5e1",
-                         background: active ? "#eff6ff" : "#fff",
-                         color: active ? "#1d4ed8" : "#475569",
-                         fontSize: 12, fontWeight: 600, cursor: "pointer"
-                       }}
-                     >
-                       {fmtChileTime(s.startsAt)}
-                     </button>
-                   );
-                 })}
-                 {!loading && available.length === 0 && <div style={{ fontSize: 12, color: "#94a3b8", gridColumn: "1/-1" }}>No hay cupos</div>}
-               </div>
+          <div
+            style={{
+              background: "#f8fafc",
+              border: "1px solid #e2e8f0",
+              borderRadius: 16,
+              padding: 16,
+            }}
+          >
+            <div
+              style={{
+                fontWeight: 700,
+                fontSize: 13,
+                marginBottom: 12,
+                color: "#16a34a",
+              }}
+            >
+              ● Disponibles
+            </div>
+            {loading ? (
+              <div style={{ fontSize: 12, color: "#94a3b8" }}>Cargando...</div>
+            ) : (
+              <div
+                style={{
+                  display: "grid",
+                  gridTemplateColumns: "repeat(auto-fill, minmax(60px, 1fr))",
+                  gap: 8,
+                }}
+              >
+                {available.map((s) => {
+                  const active = pickedSlot?.startsAt === s.startsAt;
+                  return (
+                    <button
+                      key={s.startsAt}
+                      onClick={() => setPickedSlot(s)}
+                      style={{
+                        textAlign: "center",
+                        padding: "6px",
+                        borderRadius: "6px",
+                        border: active
+                          ? "2px solid var(--primary)"
+                          : "1px solid #cbd5e1",
+                        background: active ? "var(--primary-soft)" : "#fff",
+                        color: active ? "var(--primary)" : "#475569",
+                        fontSize: 12,
+                        fontWeight: 600,
+                        cursor: "pointer",
+                        transition: "all 0.2s",
+                      }}
+                    >
+                      {fmtChileTime(s.startsAt)}
+                    </button>
+                  );
+                })}
+                {!loading && available.length === 0 && (
+                  <div
+                    style={{
+                      fontSize: 12,
+                      color: "#94a3b8",
+                      gridColumn: "1/-1",
+                    }}
+                  >
+                    No hay cupos
+                  </div>
+                )}
+              </div>
             )}
           </div>
 
           {/* Ocupados */}
-          <div style={{ background: "#fff5f5", border: "1px solid #fee2e2", borderRadius: 16, padding: 16 }}>
-            <div style={{ fontWeight: 700, fontSize: 13, marginBottom: 12, color: "#ef4444" }}>● Ocupados</div>
-            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(60px, 1fr))", gap: 8 }}>
+          <div
+            style={{
+              background: "#fff5f5",
+              border: "1px solid #fee2e2",
+              borderRadius: 16,
+              padding: 16,
+            }}
+          >
+            <div
+              style={{
+                fontWeight: 700,
+                fontSize: 13,
+                marginBottom: 12,
+                color: "#ef4444",
+              }}
+            >
+              ● Ocupados
+            </div>
+            <div
+              style={{
+                display: "grid",
+                gridTemplateColumns: "repeat(auto-fill, minmax(60px, 1fr))",
+                gap: 8,
+              }}
+            >
               {taken.map((s) => (
-                <div key={s.id} style={{ textAlign: "center", padding: "6px", borderRadius: "6px", background: "#fff", border: "1px solid #fecaca", fontSize: 12, color: "#f87171", textDecoration: "line-through", opacity: 0.7 }}>
+                <div
+                  key={s.id}
+                  style={{
+                    textAlign: "center",
+                    padding: "6px",
+                    borderRadius: "6px",
+                    background: "#fff",
+                    border: "1px solid #fecaca",
+                    fontSize: 12,
+                    color: "#f87171",
+                    textDecoration: "line-through",
+                    opacity: 0.7,
+                  }}
+                >
                   {fmtChileTime(s.startsAt)}
                 </div>
               ))}
-              {!loading && taken.length === 0 && <div style={{ fontSize: 12, color: "#fca5a5", gridColumn: "1/-1" }}>Nada por hoy</div>}
+              {!loading && taken.length === 0 && (
+                <div
+                  style={{ fontSize: 12, color: "#fca5a5", gridColumn: "1/-1" }}
+                >
+                  Nada por hoy
+                </div>
+              )}
             </div>
           </div>
         </div>
 
         {/* Formulario */}
-        <div style={{ marginTop: 24, background: "#fff", border: "1px solid #e2e8f0", borderRadius: 20, padding: 20 }}>
-          <div style={{ fontWeight: 700, marginBottom: 16, fontSize: 15 }}>Tus datos</div>
-          
-          <div style={{ display: "grid", gap: 12 }}>
-            <input value={visitorName} onChange={(e) => setVisitorName(e.target.value)} placeholder="Nombre completo" style={inputStyle} disabled={submitting} />
-            <input type="email" value={visitorEmail} onChange={(e) => setVisitorEmail(e.target.value)} placeholder="Correo electrónico" style={inputStyle} disabled={submitting} />
-            <input type="tel" value={visitorPhone} onChange={(e) => setVisitorPhone(e.target.value)} placeholder="Teléfono" style={inputStyle} disabled={submitting} />
-            <textarea value={notes} onChange={(e) => setNotes(e.target.value)} placeholder="Notas adicionales..." style={{...inputStyle, minHeight: 80, resize: "none"}} disabled={submitting} />
+        <div
+          style={{
+            marginTop: 24,
+            background: "#fff",
+            border: "1px solid #e2e8f0",
+            borderRadius: 20,
+            padding: 20,
+          }}
+        >
+          <div style={{ fontWeight: 700, marginBottom: 16, fontSize: 15 }}>
+            Tus datos
+          </div>
 
-            {msg && msgType === 'error' && (
-              <div style={{ padding: "10px", borderRadius: "8px", fontSize: "13px", fontWeight: 500, background: "#fef2f2", color: "#991b1b" }}>
+          <div style={{ display: "grid", gap: 12 }}>
+            <input
+              value={visitorName}
+              onChange={(e) => setVisitorName(e.target.value)}
+              placeholder="Nombre completo"
+              style={inputStyle}
+              disabled={submitting}
+            />
+            <input
+              type="email"
+              value={visitorEmail}
+              onChange={(e) => setVisitorEmail(e.target.value)}
+              placeholder="Correo electrónico"
+              style={inputStyle}
+              disabled={submitting}
+            />
+            <input
+              type="tel"
+              value={visitorPhone}
+              onChange={(e) => setVisitorPhone(e.target.value)}
+              placeholder="Teléfono"
+              style={inputStyle}
+              disabled={submitting}
+            />
+            <textarea
+              value={notes}
+              onChange={(e) => setNotes(e.target.value)}
+              placeholder="Notas adicionales..."
+              style={{ ...inputStyle, minHeight: 80, resize: "none" }}
+              disabled={submitting}
+            />
+
+            {msg && msgType === "error" && (
+              <div
+                style={{
+                  padding: "10px",
+                  borderRadius: "8px",
+                  fontSize: "13px",
+                  fontWeight: 500,
+                  background: "#fef2f2",
+                  color: "#991b1b",
+                }}
+              >
                 {msg}
               </div>
             )}
@@ -401,22 +735,49 @@ export default function EmbedBookingPage() {
               disabled={!pickedSlot || submitting}
               onClick={submitBooking}
               style={{
-                marginTop: 8, padding: "14px", borderRadius: "12px", border: "none",
-                background: !pickedSlot || submitting ? "#e2e8f0" : "#2563eb",
+                marginTop: 8,
+                padding: "14px",
+                borderRadius: "12px",
+                border: "none",
+                background:
+                  !pickedSlot || submitting ? "#e2e8f0" : "var(--primary)",
                 color: !pickedSlot || submitting ? "#94a3b8" : "#fff",
-                fontWeight: 700, fontSize: 15, cursor: (!pickedSlot || submitting) ? "not-allowed" : "pointer", 
-                transition: "all 0.2s", display: "flex", alignItems: "center", justifyContent: "center", gap: 8
+                fontWeight: 700,
+                fontSize: 15,
+                cursor: !pickedSlot || submitting ? "not-allowed" : "pointer",
+                transition: "all 0.2s",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                gap: 8,
               }}
             >
-              {submitting && <div style={{width: 16, height: 16, border: "2px solid #fff", borderTopColor: "transparent", borderRadius: "50%", animation: "spin 1s linear infinite"}} />}
+              {submitting && (
+                <div
+                  style={{
+                    width: 16,
+                    height: 16,
+                    border: "2px solid #fff",
+                    borderTopColor: "transparent",
+                    borderRadius: "50%",
+                    animation: "spin 1s linear infinite",
+                  }}
+                />
+              )}
               {submitting ? "Confirmando..." : "Confirmar Reserva"}
             </button>
           </div>
           <style jsx>{`
-            @keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
+            @keyframes spin {
+              from {
+                transform: rotate(0deg);
+              }
+              to {
+                transform: rotate(360deg);
+              }
+            }
           `}</style>
         </div>
-
       </div>
     </div>
   );
