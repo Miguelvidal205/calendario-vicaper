@@ -9,6 +9,23 @@ type TakenSlot = { id: string; startsAt: string; endsAt: string };
 
 // --- HELPERS DE FECHAS (Timezone Chile) ---
 
+function getChileHour(iso: string) {
+  return parseInt(
+    new Intl.DateTimeFormat("en-GB", {
+      timeZone: "America/Santiago",
+      hour: "2-digit",
+      hourCycle: "h23",
+    }).format(new Date(iso)),
+  );
+}
+
+function getChileDayName(ymd: string) {
+  const d = new Date(`${ymd}T12:00:00`);
+  return new Intl.DateTimeFormat("en-US", { weekday: "short" })
+    .format(d)
+    .toLowerCase();
+}
+
 function fmtChileTime(iso: string) {
   const d = new Date(iso);
   return new Intl.DateTimeFormat("es-CL", {
@@ -123,11 +140,7 @@ export default function EmbedBookingPage() {
   const canGoBack = monthUTC.getTime() > actualCurrentMonthStart.getTime();
 
   // --- ESTADO DE BRANDING ---
-  const [config, setConfig] = useState({
-    primaryColor: "#2563eb",
-    backgroundColor: "#ffffff",
-    logoUrl: "",
-  });
+  const [config, setConfig] = useState<any | null>(null);
 
   // Estado de Datos (Slots)
   const [available, setAvailable] = useState<Slot[]>([]);
@@ -151,16 +164,10 @@ export default function EmbedBookingPage() {
   );
 
   // Carga de disponibilidad y Configuración Visual
-  async function reload() {
-    if (!slug) return;
-    if (!bookingKey) {
-      setMsg("Error de configuración: Falta booking key");
-      return;
-    }
-    setLoading(true);
-    setMsg("");
-    setPickedSlot(null);
 
+  async function reload() {
+    if (!slug || !bookingKey) return;
+    setLoading(true);
     try {
       const [resConfig, resAvail, resTaken] = await Promise.all([
         fetch(`/api/v1/public/booking/${slug}/settings?key=${bookingKey}`),
@@ -177,28 +184,38 @@ export default function EmbedBookingPage() {
       const dataTaken = await resTaken.json();
 
       if (dataConfig.config) {
-        setConfig({
-          primaryColor: dataConfig.config.primaryColor || "#2563eb",
-          backgroundColor: dataConfig.config.backgroundColor || "#ffffff",
-          logoUrl: dataConfig.config.logoUrl || "",
-        });
+        setConfig(dataConfig.config);
       }
 
-      if (!resAvail.ok)
-        throw new Error(dataAvail.message || "Error cargando horarios");
-      if (!resTaken.ok)
-        throw new Error(dataTaken.message || "Error cargando ocupados");
+      // --- FILTRO DINÁMICO ---
+      const dayKey = getChileDayName(selectedDay);
+      const daySettingsArray = dataConfig.config?.workingHours?.[dayKey];
 
-      setAvailable(dataAvail.slots || []);
+      let rawSlots = dataAvail.slots || [];
+      let filteredSlots = [];
+
+      // Validamos que sea un array con datos: "mon": [{ "start": "09:00", ... }]
+      if (Array.isArray(daySettingsArray) && daySettingsArray.length > 0) {
+        const { start, end } = daySettingsArray[0];
+        const startH = parseInt(start.split(":")[0]);
+        const endH = parseInt(end.split(":")[0]);
+
+        filteredSlots = rawSlots.filter((s: any) => {
+          const h = getChileHour(s.startsAt);
+          return h >= startH && h < endH;
+        });
+      } else {
+        filteredSlots = []; // Si el día está vacío o no existe, no hay horas
+      }
+
+      setAvailable(filteredSlots);
       setTaken(dataTaken.taken || []);
-    } catch (e: any) {
-      setMsgType("error");
-      setMsg(e.message);
+    } catch (e) {
+      console.error("Error cargando disponibilidad:", e);
     } finally {
       setLoading(false);
     }
   }
-
   // Sync del mes del calendario con el día seleccionado
   useEffect(() => {
     const p = parseYMD(selectedDay);
@@ -210,8 +227,7 @@ export default function EmbedBookingPage() {
 
   // Cargar datos al iniciar o cambiar día
   useEffect(() => {
-    void reload();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    void reload(); // El 'void' soluciona el error de "Promise<void> is not assignable"
   }, [slug, selectedDay, bookingKey]);
 
   // Submit Reserva
@@ -263,12 +279,35 @@ export default function EmbedBookingPage() {
 
   // --- VARIABLES CSS DINÁMICAS ---
   const brandingStyles = {
-    "--primary": config.primaryColor,
-    "--bg-page": config.backgroundColor,
-    "--primary-soft": `${config.primaryColor}20`,
+    "--primary": config?.primaryColor ?? "#2563eb",
+    "--bg-page": config?.backgroundColor ?? "#ffffff",
+    "--primary-soft": config ? `${config.primaryColor}20` : "#eff6ff",
   } as React.CSSProperties;
 
   // --- RENDER SUCCESS ---
+  if (!config) {
+    return (
+      <div
+        style={{
+          minHeight: "100vh",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          background: "#ffffff",
+        }}
+      >
+        <p
+          style={{
+            color: "#94a3b8",
+            fontFamily: "sans-serif",
+            fontSize: "14px",
+          }}
+        >
+          Cargando agenda...
+        </p>
+      </div>
+    );
+  }
   if (successId) {
     return (
       <div
@@ -374,7 +413,11 @@ export default function EmbedBookingPage() {
             />
           ) : (
             <div
-              style={{ color: "var(--primary)", fontWeight: 800, fontSize: 20 }}
+              style={{
+                color: "var(--primary)",
+                fontWeight: 800,
+                fontSize: 20,
+              }}
             >
               PROYECTO
             </div>
@@ -661,7 +704,11 @@ export default function EmbedBookingPage() {
               ))}
               {!loading && taken.length === 0 && (
                 <div
-                  style={{ fontSize: 12, color: "#fca5a5", gridColumn: "1/-1" }}
+                  style={{
+                    fontSize: 12,
+                    color: "#fca5a5",
+                    gridColumn: "1/-1",
+                  }}
                 >
                   Nada por hoy
                 </div>
