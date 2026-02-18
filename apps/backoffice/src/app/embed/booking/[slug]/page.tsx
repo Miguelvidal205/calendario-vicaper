@@ -190,22 +190,29 @@ export default function EmbedBookingPage() {
       // --- FILTRO DINÁMICO ---
       const dayKey = getChileDayName(selectedDay);
       const daySettingsArray = dataConfig.config?.workingHours?.[dayKey];
-
+      console.log("🔍 DEBUG CALENDARIO:", {
+        diaSeleccionado: selectedDay,
+        dayKey: dayKey, // Debería ser 'mon', 'tue', etc.
+        rangosConfigurados: daySettingsArray, // ¡OJO AQUÍ! ¿Ves 1 objeto o 2?
+        slotsRecibidosAPI: dataAvail.slots, // ¿Vienen todas las horas o ya vienen cortadas?
+      });
       let rawSlots = dataAvail.slots || [];
       let filteredSlots = [];
 
-      // Validamos que sea un array con datos: "mon": [{ "start": "09:00", ... }]
+      // Validamos que sea un array con datos
       if (Array.isArray(daySettingsArray) && daySettingsArray.length > 0) {
-        const { start, end } = daySettingsArray[0];
-        const startH = parseInt(start.split(":")[0]);
-        const endH = parseInt(end.split(":")[0]);
-
         filteredSlots = rawSlots.filter((s: any) => {
           const h = getChileHour(s.startsAt);
-          return h >= startH && h < endH;
+
+          // REVISAMOS TODOS LOS RANGOS (no solo el [0])
+          return daySettingsArray.some((range: any) => {
+            const startH = parseInt(range.start.split(":")[0]);
+            const endH = parseInt(range.end.split(":")[0]);
+            return h >= startH && h < endH;
+          });
         });
       } else {
-        filteredSlots = []; // Si el día está vacío o no existe, no hay horas
+        filteredSlots = [];
       }
 
       setAvailable(filteredSlots);
@@ -527,12 +534,19 @@ export default function EmbedBookingPage() {
               const isSelected = d.ymd === selectedDay;
               const isPast = d.ymd < initialDay;
 
+              // --- NUEVA LÓGICA PARA BLOQUEAR DÍAS ---
+              const dayName = getChileDayName(d.ymd);
+              // Si no hay configuración o el array de horas está vacío, está cerrado
+              const isClosed = !config?.workingHours?.[dayName]?.length;
+
+              const isDisabled = isPast || isClosed;
+
               return (
                 <button
                   key={d.ymd}
-                  disabled={isPast}
+                  disabled={isDisabled} // <--- APLICAMOS EL DISABLED
                   onClick={() => {
-                    if (!isPast) {
+                    if (!isDisabled) {
                       setSelectedDay(d.ymd);
                       setPickedSlot(null);
                     }
@@ -546,19 +560,22 @@ export default function EmbedBookingPage() {
                     background: isSelected
                       ? "var(--primary-soft)"
                       : "transparent",
-                    color: isPast
+                    // Estilo visual para días deshabilitados
+                    color: isDisabled
                       ? "#e2e8f0"
                       : isSelected
                         ? "var(--primary)"
                         : d.inMonth
                           ? "#334155"
                           : "#cbd5e1",
-                    cursor: isPast ? "default" : "pointer",
+                    cursor: isDisabled ? "default" : "pointer",
                     fontSize: 14,
                     fontWeight: isSelected ? 700 : 500,
                     textDecoration: isPast ? "line-through" : "none",
                     outline: "none",
                     transition: "all 0.2s",
+                    // Bajamos opacidad si es un día cerrado futuro
+                    opacity: isClosed && !isPast ? 0.5 : 1,
                   }}
                 >
                   {d.ymd.slice(-2)}

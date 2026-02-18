@@ -306,12 +306,12 @@ export default function DashboardLayout({
               icon="➕"
             />
 
-            <NavSectionTitle label="Desarrolladores" />
-            <NavLink href="/dashboard/api-keys" label="API Keys" icon="🔑" />
+            {/* <NavSectionTitle label="Desarrolladores" />
+            <NavLink href="/dashboard/api-keys" label="API Keys" icon="🔑" /> */}
 
-            <NavSectionTitle label="Próximamente" />
+            {/* <NavSectionTitle label="Próximamente" />
             <NavMuted label="CRM Clientes" />
-            <NavMuted label="Inventario" />
+            <NavMuted label="Inventario" /> */}
           </nav>
 
           {/* FOOTER USER */}

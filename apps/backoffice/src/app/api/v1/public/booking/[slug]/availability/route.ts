@@ -4,6 +4,9 @@ import { supabaseAdmin } from "@/lib/supabase/admin";
 import { jsonError } from "@/lib/http/errorResponse";
 import { sha256Hex } from "@/lib/publicBooking/bookingKey";
 
+// --- IMPORTANTE: Evita cacheo ---
+export const dynamic = "force-dynamic";
+
 const ParamsSchema = z.object({ slug: z.string().min(2).max(200) });
 
 const QuerySchema = z.object({
@@ -98,11 +101,27 @@ async function verifyBookingKey(
   }
 }
 
+// --- CORRECCIÓN: Detectar día en Chile, no en UTC ---
 function dayKeyFromDate(date: string): DayKey {
-  const d = new Date(`${date}T12:00:00.000Z`);
-  const dow = d.getUTCDay(); // 0..6
-  const map: DayKey[] = ["sun", "mon", "tue", "wed", "thu", "fri", "sat"];
-  return map[dow] ?? "mon";
+  // Creamos la fecha y forzamos la zona horaria para saber qué día es AHÍ
+  // Usamos el mediodía para evitar problemas de borde
+  const d = new Date(`${date}T12:00:00Z`);
+  const fmt = new Intl.DateTimeFormat("en-US", {
+    timeZone: "America/Santiago",
+    weekday: "short",
+  });
+  const dayName = fmt.format(d).toLowerCase(); // "mon", "tue", ...
+
+  const map: Record<string, DayKey> = {
+    mon: "mon",
+    tue: "tue",
+    wed: "wed",
+    thu: "thu",
+    fri: "fri",
+    sat: "sat",
+    sun: "sun",
+  };
+  return map[dayName] ?? "mon";
 }
 
 function parseHHMM(s: string): { h: number; m: number } {
@@ -119,26 +138,38 @@ function pad2(n: number) {
   return String(n).padStart(2, "0");
 }
 
-/**
- * Para poder avanzar sin librerías de TZ:
- * - Generamos instantes en UTC "naive" con date + HH:MM como si fuese UTC.
- * - Luego en UI se formatea a America/Santiago.
- *
- * ✅ Esto sirve para ver slots (y comparar ocupados) ya.
- * Luego lo mejoramos a TZ Chile exacto (DST) con una función de offset.
- */
 function naiveUtcIsoFromDateTime(date: string, hhmm: string) {
   return new Date(`${date}T${hhmm}:00.000Z`).toISOString();
+}
+
+// --- CORRECCIÓN: Calcular Offset de Chile dinámicamente ---
+function getChileOffsetHours(date: string): number {
+  // Tomamos una hora de referencia UTC (ej: 12:00)
+  const d = new Date(`${date}T12:00:00.000Z`);
+
+  // Preguntamos qué hora es en Chile cuando en UTC son las 12:00
+  const fmt = new Intl.DateTimeFormat("en-US", {
+    timeZone: "America/Santiago",
+    hour: "numeric",
+    hourCycle: "h23",
+  });
+
+  const chileHour = parseInt(fmt.format(d)); // Ej: 8 o 9
+
+  // La diferencia es el offset (Ej: 12 - 9 = 3 horas)
+  let diff = 12 - chileHour;
+  if (diff < 0) diff += 24; // Seguridad por si cruza el día (raro al mediodía)
+
+  return diff;
 }
 
 async function getSettings(
   admin: ReturnType<typeof supabaseAdmin>,
   terrenoId: string,
 ) {
-  // Lee solo lo que sabemos que existe hoy: working_hours
   const { data, error } = await admin
     .from("terreno_booking_settings")
-    .select("working_hours")
+    .select("working_hours, slot_duration_minutes, buffer_minutes") // Traemos todo
     .eq("terreno_id", terrenoId)
     .maybeSingle();
 
@@ -154,9 +185,8 @@ async function getSettings(
     sun: [],
   }) as WorkingHours;
 
-  // Defaults (mientras conectamos columnas reales)
-  const durationMin = 60;
-  const bufferMin = 0;
+  const durationMin = data?.slot_duration_minutes ?? 60;
+  const bufferMin = data?.buffer_minutes ?? 0;
 
   return { workingHours, durationMin, bufferMin };
 }
@@ -166,7 +196,7 @@ async function getTaken(
   terrenoId: string,
   date: string,
 ) {
-  // bounds naive UTC del día
+  // Buscamos ocupados en todo el día UTC (Cubre cualquier desfase horario)
   const from = new Date(`${date}T00:00:00.000Z`).toISOString();
   const to = new Date(`${date}T23:59:59.999Z`).toISOString();
 
@@ -196,7 +226,7 @@ export async function GET(
   ctx: { params: Promise<{ slug: string }> },
 ) {
   try {
-    const { slug } = ParamsSchema.parse(await ctx.params);
+    const { slug } = await ctx.params;
 
     const url = new URL(req.url);
     const q = QuerySchema.parse({
@@ -216,8 +246,13 @@ export async function GET(
     );
     const taken = await getTaken(admin, terrenoId, q.date);
 
+    // 1. Detectar día correcto
     const dayKey = dayKeyFromDate(q.date);
     const ranges = workingHours[dayKey] ?? [];
+
+    // 2. Calcular Offset dinámico para HOY (ej: 3 o 4 horas)
+    const offsetHours = getChileOffsetHours(q.date);
+    const offsetMinutes = offsetHours * 60;
 
     const slots: { startsAt: string; endsAt: string }[] = [];
 
@@ -225,24 +260,30 @@ export async function GET(
       const s = parseHHMM(r.start);
       const e = parseHHMM(r.end);
 
+      // 'cur' son minutos LOCALES (ej: 9:00 = 540)
       let cur = minutes(s.h, s.m);
       const endMin = minutes(e.h, e.m);
 
       while (cur + durationMin <= endMin) {
-        const sh = Math.floor(cur / 60);
-        const sm = cur % 60;
+        // CORRECCIÓN: Convertir hora LOCAL a UTC sumando el offset
+        const utcCur = cur + offsetMinutes;
+        const utcEnd = utcCur + durationMin;
 
-        const ehTotal = cur + durationMin;
-        const eh = Math.floor(ehTotal / 60);
-        const em = ehTotal % 60;
+        // Formatear a UTC hh:mm
+        const uSh = Math.floor(utcCur / 60);
+        const uSm = utcCur % 60;
+        const uEh = Math.floor(utcEnd / 60);
+        const uEm = utcEnd % 60;
 
+        // Generar ISO UTC real
+        // Nota: Si uSh >= 24, Date() lo maneja, pero booking suele ser mismo día.
         const startsAtIso = naiveUtcIsoFromDateTime(
           q.date,
-          `${pad2(sh)}:${pad2(sm)}`,
+          `${pad2(uSh % 24)}:${pad2(uSm)}`,
         );
         const endsAtIso = naiveUtcIsoFromDateTime(
           q.date,
-          `${pad2(eh)}:${pad2(em)}`,
+          `${pad2(uEh % 24)}:${pad2(uEm)}`,
         );
 
         const slotStart = new Date(startsAtIso).getTime();
@@ -256,6 +297,7 @@ export async function GET(
             t.end + bufferMin * 60_000,
           ),
         );
+
         if (!blocked) slots.push({ startsAt: startsAtIso, endsAt: endsAtIso });
 
         cur += durationMin;
