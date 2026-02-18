@@ -138,7 +138,12 @@ export default function EmbedBookingPage() {
     [initialDay],
   );
   const canGoBack = monthUTC.getTime() > actualCurrentMonthStart.getTime();
-
+  const canGoForward = useMemo(() => {
+    // Calculamos el tope: Mes actual + 1 mes
+    const maxMonth = addMonthsUTC(actualCurrentMonthStart, 1);
+    // Solo permitimos avanzar si el mes visible es MENOR al tope
+    return monthUTC.getTime() < maxMonth.getTime();
+  }, [monthUTC, actualCurrentMonthStart]);
   // --- ESTADO DE BRANDING ---
   const [config, setConfig] = useState<any | null>(null);
 
@@ -487,13 +492,14 @@ export default function EmbedBookingPage() {
               {monthTitleChile(monthUTC)}
             </div>
             <button
+              disabled={!canGoForward}
               onClick={() => setMonthUTC((d) => addMonthsUTC(d, +1))}
               style={{
                 background: "none",
                 border: "none",
-                cursor: "pointer",
-                color: "#475569",
                 fontSize: 18,
+                cursor: canGoForward ? "pointer" : "not-allowed",
+                color: canGoForward ? "#475569" : "#cbd5e1",
               }}
             >
               ❯
@@ -676,7 +682,7 @@ export default function EmbedBookingPage() {
           </div>
 
           {/* Ocupados */}
-          <div
+          {/* <div
             style={{
               background: "#fff5f5",
               border: "1px solid #fee2e2",
@@ -731,7 +737,7 @@ export default function EmbedBookingPage() {
                 </div>
               )}
             </div>
-          </div>
+          </div> */}
         </div>
 
         {/* Formulario */}
