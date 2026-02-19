@@ -12,9 +12,10 @@ export async function GET() {
 
     const terrenoId = await requireActiveTerrenoId();
 
+    // 1. Obtenemos miembros incluyendo su color y horarios
     const { data: members, error: memberErr } = await sb
       .from("terreno_members")
-      .select("user_id, role, working_hours")
+      .select("user_id, role, working_hours, color")
       .eq("terreno_id", terrenoId)
       .order("role", { ascending: true });
 
@@ -24,6 +25,7 @@ export async function GET() {
 
     const userIds = members.map((m) => m.user_id);
 
+    // 2. Obtenemos perfiles
     const { data: profiles, error: profErr } = await sb
       .from("profiles")
       .select("id, email, full_name, phone")
@@ -31,6 +33,7 @@ export async function GET() {
 
     if (profErr) throw new Error(profErr.message);
 
+    // 3. Mapeamos incluyendo el color
     const users = members.map((member) => {
       const profile = profiles?.find((p) => p.id === member.user_id);
       return {
@@ -40,6 +43,7 @@ export async function GET() {
         phone: profile?.phone || "",
         role: member.role,
         workingHours: member.working_hours,
+        color: member.color || "#3b82f6", // Azul por defecto si no tiene
       };
     });
 
@@ -72,7 +76,8 @@ export async function POST(request: Request) {
       );
     }
 
-    const { email, password, name, phone, role, workingHours } =
+    // Extraemos el color enviado desde el frontend
+    const { email, password, name, phone, role, workingHours, color } =
       await request.json();
     if (!email || !password || !name || !role)
       throw new Error("Faltan datos requeridos.");
@@ -93,9 +98,9 @@ export async function POST(request: Request) {
     if (authError) throw new Error(authError.message);
     const newUserId = authData.user.id;
 
-    // Solo insertamos working_hours si es un agente (field_agent o agent dependiendo de como lo llames)
     const hoursToSave = role === "agent" ? workingHours : null;
 
+    // Insertamos en terreno_members con el nuevo color
     const { error: memberError } = await supabaseAdmin
       .from("terreno_members")
       .insert({
@@ -103,6 +108,7 @@ export async function POST(request: Request) {
         user_id: newUserId,
         role,
         working_hours: hoursToSave,
+        color: color || "#3b82f6",
       });
 
     if (memberError) throw new Error(memberError.message);
@@ -121,7 +127,7 @@ export async function PUT(request: Request) {
 
     const terrenoId = await requireActiveTerrenoId();
 
-    // Validar que quien ejecuta sea Admin
+    // Validar Admin
     const { data: callerData } = await sb
       .from("terreno_members")
       .select("role")
@@ -136,7 +142,8 @@ export async function PUT(request: Request) {
       );
     }
 
-    const { id, name, phone, role, workingHours } = await request.json();
+    // Extraemos el color enviado desde el frontend
+    const { id, name, phone, role, workingHours, color } = await request.json();
     if (!id || !name || !role)
       throw new Error("Faltan datos requeridos para actualizar.");
 
@@ -145,7 +152,6 @@ export async function PUT(request: Request) {
       process.env.SUPABASE_SERVICE_ROLE_KEY!,
     );
 
-    // 1. Actualizar metadatos en auth.users
     const { error: authError } = await supabaseAdmin.auth.admin.updateUserById(
       id,
       {
@@ -154,20 +160,25 @@ export async function PUT(request: Request) {
     );
     if (authError) throw new Error(`Auth Error: ${authError.message}`);
 
-    // 2. Actualizar la tabla pública profiles
     const { error: profError } = await supabaseAdmin
       .from("profiles")
       .update({ full_name: name, phone: phone || "" })
       .eq("id", id);
     if (profError) throw new Error(`Profiles Error: ${profError.message}`);
 
-    // 3. Actualizar rol y horarios en terreno_members
     const hoursToSave = role === "agent" ? workingHours : null;
+
+    // Actualizamos terreno_members incluyendo el color
     const { error: memberError } = await supabaseAdmin
       .from("terreno_members")
-      .update({ role, working_hours: hoursToSave })
+      .update({
+        role,
+        working_hours: hoursToSave,
+        color: color || "#3b82f6",
+      })
       .eq("terreno_id", terrenoId)
       .eq("user_id", id);
+
     if (memberError) throw new Error(`Members Error: ${memberError.message}`);
 
     return NextResponse.json({ success: true });

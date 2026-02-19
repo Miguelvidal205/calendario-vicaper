@@ -15,6 +15,8 @@ async function jsonFetch<T>(
 }
 
 type UserRole = "admin" | "remote_exec" | "agent";
+
+// 1. Asegurarnos de que el tipo de dato reciba el color
 interface SystemUser {
   id: string;
   email: string;
@@ -22,6 +24,7 @@ interface SystemUser {
   phone?: string;
   role: UserRole;
   workingHours?: any;
+  color?: string; // <-- Agregado
 }
 
 const DIAS_SEMANA = [
@@ -50,12 +53,14 @@ export default function UsersPage() {
   const [modalMode, setModalMode] = useState<"create" | "edit">("create");
   const [selectedUserId, setSelectedUserId] = useState<string | null>(null);
 
+  // 2. Estado del formulario con el color por defecto incluido
   const [form, setForm] = useState({
     name: "",
     email: "",
     phone: "",
     password: "",
     role: "agent",
+    color: "#3b82f6", // <-- Azul por defecto
   });
   const [workingHours, setWorkingHours] = useState(defaultSchedule);
   const [saving, setSaving] = useState(false);
@@ -78,14 +83,23 @@ export default function UsersPage() {
     loadUsers();
   }, []);
 
+  // 3. Resetear el color al abrir para crear
   const openCreateModal = () => {
     setModalMode("create");
     setSelectedUserId(null);
-    setForm({ name: "", email: "", phone: "", password: "", role: "agent" });
+    setForm({
+      name: "",
+      email: "",
+      phone: "",
+      password: "",
+      role: "agent",
+      color: "#3b82f6", // <-- Resetear color
+    });
     setWorkingHours(defaultSchedule);
     setShowModal(true);
   };
 
+  // 4. Cargar el color existente al abrir para editar
   const openEditModal = (user: SystemUser) => {
     setModalMode("edit");
     setSelectedUserId(user.id);
@@ -93,11 +107,11 @@ export default function UsersPage() {
       name: user.name,
       email: user.email,
       phone: user.phone || "",
-      password: "", // No se edita por aquí
+      password: "",
       role: user.role,
+      color: user.color || "#3b82f6", // <-- Cargar el color del usuario o default
     });
 
-    // Si tiene horarios guardados, los combinamos con el default por si falta algún día
     if (user.role === "agent" && user.workingHours) {
       setWorkingHours({ ...defaultSchedule, ...user.workingHours });
     } else {
@@ -111,6 +125,7 @@ export default function UsersPage() {
     setSaving(true);
     setError("");
     try {
+      // Al hacer ...form, estamos enviando form.color automáticamente
       if (modalMode === "create") {
         await jsonFetch("/api/v1/terreno/users", {
           method: "POST",
@@ -177,7 +192,7 @@ export default function UsersPage() {
                 >
                   <th style={{ padding: "12px 8px" }}>Nombre / Email</th>
                   <th style={{ padding: "12px 8px" }}>Teléfono</th>
-                  <th style={{ padding: "12px 8px" }}>Rol</th>
+                  <th style={{ padding: "12px 8px" }}>Rol y Color</th>
                   <th style={{ padding: "12px 8px", textAlign: "right" }}>
                     Acciones
                   </th>
@@ -199,16 +214,34 @@ export default function UsersPage() {
                       {user.phone || "-"}
                     </td>
                     <td style={{ padding: "12px 8px" }}>
-                      <span
+                      <div
                         style={{
-                          padding: "4px 8px",
-                          borderRadius: "999px",
-                          fontSize: 12,
-                          backgroundColor: "#e2e8f0",
+                          display: "flex",
+                          alignItems: "center",
+                          gap: 8,
                         }}
                       >
-                        {user.role.toUpperCase()}
-                      </span>
+                        {/* 5. Círculo de color en la tabla para ver si se guardó bien */}
+                        <div
+                          style={{
+                            width: 14,
+                            height: 14,
+                            borderRadius: "50%",
+                            backgroundColor: user.color || "#ccc",
+                            border: "1px solid #cbd5e1",
+                          }}
+                        ></div>
+                        <span
+                          style={{
+                            padding: "4px 8px",
+                            borderRadius: "999px",
+                            fontSize: 12,
+                            backgroundColor: "#e2e8f0",
+                          }}
+                        >
+                          {user.role.toUpperCase()}
+                        </span>
+                      </div>
                     </td>
                     <td style={{ padding: "12px 8px", textAlign: "right" }}>
                       <button
@@ -274,7 +307,6 @@ export default function UsersPage() {
                   onChange={(e) => setForm({ ...form, name: e.target.value })}
                 />
 
-                {/* Email y Password solo se muestran al crear */}
                 {modalMode === "create" && (
                   <>
                     <input
@@ -318,15 +350,53 @@ export default function UsersPage() {
                   value={form.phone}
                   onChange={(e) => setForm({ ...form, phone: e.target.value })}
                 />
-                <select
-                  className="ui-select"
-                  value={form.role}
-                  onChange={(e) => setForm({ ...form, role: e.target.value })}
-                >
-                  <option value="agent">Agente de Terreno</option>
-                  <option value="remote_exec">Ejecutivo Remoto</option>
-                  <option value="admin">Administrador</option>
-                </select>
+
+                <div style={{ display: "flex", gap: 12 }}>
+                  <div style={{ flex: 1 }}>
+                    <select
+                      className="ui-select"
+                      style={{ width: "100%" }}
+                      value={form.role}
+                      onChange={(e) =>
+                        setForm({ ...form, role: e.target.value })
+                      }
+                    >
+                      <option value="agent">Agente de Terreno</option>
+                      <option value="remote_exec">Ejecutivo Remoto</option>
+                      <option value="admin">Administrador</option>
+                    </select>
+                  </div>
+                  {/* Selector de color */}
+                  <div
+                    style={{ display: "flex", alignItems: "center", gap: 8 }}
+                  >
+                    <label
+                      style={{
+                        fontSize: 12,
+                        color: "#64748b",
+                        fontWeight: 600,
+                      }}
+                    >
+                      Color:
+                    </label>
+                    <input
+                      type="color"
+                      value={form.color}
+                      onChange={(e) =>
+                        setForm({ ...form, color: e.target.value })
+                      }
+                      style={{
+                        width: 36,
+                        height: 36,
+                        padding: 0,
+                        border: "none",
+                        borderRadius: 4,
+                        cursor: "pointer",
+                      }}
+                      title="Color en el Calendario"
+                    />
+                  </div>
+                </div>
 
                 {/* HORARIOS: Solo visible para agentes de terreno */}
                 {form.role === "agent" && (

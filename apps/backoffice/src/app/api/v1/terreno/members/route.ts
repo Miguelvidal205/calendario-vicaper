@@ -25,7 +25,7 @@ export async function GET() {
     // RLS: el usuario debe poder ver terreno_members del terreno donde pertenece.
     const { data, error } = await sb
       .from("terreno_members")
-      .select("user_id, role")
+      .select("user_id, role, color")
       .eq("terreno_id", terrenoId)
       .order("role", { ascending: true })
       .returns<MemberRow[]>();
