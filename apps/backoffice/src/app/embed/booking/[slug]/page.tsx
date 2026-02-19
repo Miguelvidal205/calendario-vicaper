@@ -71,7 +71,7 @@ function parseYMD(ymd: string): { y: number; m: number; d: number } | null {
 
 function startOfMonthUTC(ymd: string) {
   const p = parseYMD(ymd) ?? { y: 1970, m: 1, d: 1 };
-  return new Date(Date.UTC(p.y, p.m - 1, 1));
+  return new Date(Date.UTC(p.y, p.m - 1, 1, 12));
 }
 
 function addMonthsUTC(d: Date, delta: number) {
@@ -232,7 +232,7 @@ export default function EmbedBookingPage() {
   useEffect(() => {
     const p = parseYMD(selectedDay);
     if (!p) return;
-    const monthStart = new Date(Date.UTC(p.y, p.m - 1, 1));
+    const monthStart = new Date(Date.UTC(p.y, p.m - 1, 1, 12));
     if (monthStart.getTime() !== monthUTC.getTime()) setMonthUTC(monthStart);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedDay]);
