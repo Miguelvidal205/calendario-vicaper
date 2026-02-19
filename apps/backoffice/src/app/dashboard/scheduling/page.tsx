@@ -40,7 +40,7 @@ type AppointmentDto = {
 
 type MemberDto = {
   user_id: string;
-  role: "admin" | "agent" | "installer";
+  role: "admin" | "agent" | "installer" | "remote_exec";
 };
 
 type CalendarEvent = {
@@ -89,13 +89,6 @@ function handleNoActiveTerreno(e: unknown): boolean {
   return false;
 }
 
-function pickDefaultAssignee(members: MemberDto[]): string {
-  const agent = members.find((m) => m.role === "agent")?.user_id;
-  if (agent) return agent;
-  const admin = members.find((m) => m.role === "admin")?.user_id;
-  return members[0]?.user_id ?? "";
-}
-
 // --- 4. Componente Principal ---
 export default function SchedulingPage() {
   // Estado de Creación
@@ -105,19 +98,19 @@ export default function SchedulingPage() {
   );
   const [endsAtLocal, setEndsAtLocal] = useState<string>("");
   const [title, setTitle] = useState<string>("Visita");
+  const [formAssignee, setFormAssignee] = useState<string>(""); // Para cuando está en vista "Todos"
 
   // Estado Global
   const [msg, setMsg] = useState<string>("");
   const [loading, setLoading] = useState(false);
   const [members, setMembers] = useState<MemberDto[]>([]);
   const [assignedUserId, setAssignedUserId] = useState<string>("");
+  const [currentUserRole, setCurrentUserRole] = useState<string>("");
 
   // Estado Calendario
   const [view, setView] = useState<View>(Views.WEEK);
   const [currentDate, setCurrentDate] = useState(new Date());
   const [appointments, setAppointments] = useState<AppointmentDto[]>([]);
-
-  // Estado Modal
   const [selectedAppointment, setSelectedAppointment] =
     useState<AppointmentDto | null>(null);
 
@@ -126,13 +119,26 @@ export default function SchedulingPage() {
     let cancelled = false;
     async function loadMembers() {
       try {
-        const data = await jsonFetch<{ members: MemberDto[] }>(
-          "/api/v1/terreno/members",
-        );
+        const data = await jsonFetch<{
+          members: MemberDto[];
+          currentUserId: string;
+        }>("/api/v1/terreno/members");
         if (cancelled) return;
+
         const list = data.members ?? [];
         setMembers(list);
-        setAssignedUserId((prev) => prev || pickDefaultAssignee(list));
+
+        const myId = data.currentUserId;
+        const me = list.find((m) => m.user_id === myId);
+        const myRole = me?.role || "";
+        setCurrentUserRole(myRole);
+
+        // Si es agente, solo ve su agenda. Si es admin, ve la de TODOS por defecto.
+        if (myRole === "agent" && myId) {
+          setAssignedUserId(myId);
+        } else {
+          setAssignedUserId("all");
+        }
       } catch (e) {
         if (!handleNoActiveTerreno(e)) setMsg("❌ Error cargando miembros");
       }
@@ -142,6 +148,15 @@ export default function SchedulingPage() {
       cancelled = true;
     };
   }, []);
+
+  // Sincronizar el asignado del formulario rápido
+  useEffect(() => {
+    if (assignedUserId !== "all") {
+      setFormAssignee(assignedUserId);
+    } else {
+      setFormAssignee("");
+    }
+  }, [assignedUserId]);
 
   const fetchAppointments = useCallback(
     async (date: Date, view: View, userId: string) => {
@@ -188,7 +203,13 @@ export default function SchedulingPage() {
   // --- Acciones de Negocio ---
   async function createAppointment() {
     setMsg("");
-    if (!assignedUserId) return setMsg("⚠️ No hay usuario asignable.");
+
+    // Validar a quién se le asigna la cita
+    const targetUserId =
+      assignedUserId === "all" ? formAssignee : assignedUserId;
+    if (!targetUserId)
+      return setMsg("⚠️ Debes seleccionar un agente para esta cita.");
+
     const startsAt = new Date(startsAtLocal);
     if (Number.isNaN(startsAt.getTime())) return setMsg("⚠️ Fecha inválida.");
 
@@ -200,7 +221,7 @@ export default function SchedulingPage() {
       await jsonFetch("/api/v1/appointments", {
         method: "POST",
         body: JSON.stringify({
-          assignedUserId,
+          assignedUserId: targetUserId,
           startsAt: startsAt.toISOString(),
           ...(endsAt ? { endsAt: endsAt.toISOString() } : {}),
           title,
@@ -209,6 +230,7 @@ export default function SchedulingPage() {
       setMsg("✅ Cita creada.");
       fetchAppointments(currentDate, view, assignedUserId);
       setTitle("Visita");
+      if (assignedUserId === "all") setFormAssignee(""); // Limpiar si estamos en "Todos"
     } catch (e) {
       if (!handleNoActiveTerreno(e)) setMsg("❌ Error creando cita");
     } finally {
@@ -240,11 +262,8 @@ export default function SchedulingPage() {
 
   // --- Configuración Visual del Calendario ---
   const { defaultScroll } = useMemo(() => {
-    // Solo configuramos el scroll inicial a las 08:00
-    // Así el usuario ve la mañana, pero puede scrollear hacia arriba si hay algo a las 06:00
     const scroll = new Date();
     scroll.setHours(8, 0, 0);
-
     return { defaultScroll: scroll };
   }, []);
 
@@ -305,18 +324,28 @@ export default function SchedulingPage() {
         <div className="header-row">
           <h1 className="ui-title">Calendario</h1>
           <div className="ui-card user-select-card">
-            <span className="ui-label-sm">Asignado:</span>
-            <select
-              value={assignedUserId}
-              onChange={(e) => setAssignedUserId(e.target.value)}
-              className="ui-select"
-            >
-              {members.map((m) => (
-                <option key={m.user_id} value={m.user_id}>
-                  {m.role.toUpperCase()} ({m.user_id.slice(0, 4)}...)
-                </option>
-              ))}
-            </select>
+            <span className="ui-label-sm">Ver agenda de:</span>
+            {currentUserRole === "agent" ? (
+              <span style={{ fontWeight: 600, fontSize: 14 }}>Mi Agenda</span>
+            ) : (
+              <select
+                value={assignedUserId}
+                onChange={(e) => setAssignedUserId(e.target.value)}
+                className="ui-select"
+                style={{ fontWeight: 600 }}
+              >
+                <option value="all">🌟 TODOS LOS AGENTES</option>
+                {members.map((m) => (
+                  <option
+                    key={m.user_id}
+                    value={m.user_id}
+                    style={{ fontWeight: "normal" }}
+                  >
+                    {m.role.toUpperCase()} ({m.user_id.slice(0, 4)}...)
+                  </option>
+                ))}
+              </select>
+            )}
           </div>
         </div>
 
@@ -329,64 +358,83 @@ export default function SchedulingPage() {
         )}
 
         {/* CREACIÓN RÁPIDA */}
-        <div className="ui-card quick-form">
-          <div
-            style={{
-              display: "flex",
-              alignItems: "center",
-              marginBottom: "16px",
-            }}
-          >
+        {currentUserRole !== "agent" && (
+          <div className="ui-card quick-form">
             <div
               style={{
-                width: "4px",
-                height: "20px",
-                background: "#2563eb",
-                borderRadius: "2px",
-                marginRight: "10px",
+                display: "flex",
+                alignItems: "center",
+                marginBottom: "16px",
               }}
-            ></div>
-            <h3 className="ui-subtitle" style={{ margin: 0 }}>
-              Agendar Nueva Cita
-            </h3>
-          </div>
-          <div className="form-row">
-            <div className="form-group">
-              <label className="ui-label">Inicio</label>
-              <input
-                type="datetime-local"
-                value={startsAtLocal}
-                onChange={(e) => setStartsAtLocal(e.target.value)}
-                className="ui-input"
-              />
-            </div>
-            <div className="form-group">
-              <label className="ui-label">Fin (Opcional)</label>
-              <input
-                type="datetime-local"
-                value={endsAtLocal}
-                onChange={(e) => setEndsAtLocal(e.target.value)}
-                className="ui-input"
-              />
-            </div>
-            <div className="form-group grow">
-              <label className="ui-label">Título</label>
-              <input
-                type="text"
-                value={title}
-                onChange={(e) => setTitle(e.target.value)}
-                className="ui-input"
-              />
-            </div>
-            <button
-              onClick={createAppointment}
-              disabled={loading}
-              className="ui-btn ui-btn-primary self-end"
             >
-              {loading ? "..." : "Crear"}
-            </button>
+              <div
+                style={{
+                  width: "4px",
+                  height: "20px",
+                  background: "#2563eb",
+                  borderRadius: "2px",
+                  marginRight: "10px",
+                }}
+              ></div>
+              <h3 className="ui-subtitle" style={{ margin: 0 }}>
+                Agendar Nueva Cita
+              </h3>
+            </div>
+
+            <div className="form-row">
+              {/* Si estamos viendo a TODOS, necesitamos saber a quién asignarle la nueva cita */}
+              {assignedUserId === "all" && (
+                <div className="form-group grow">
+                  <label className="ui-label">Asignar a</label>
+                  <select
+                    className="ui-select"
+                    value={formAssignee}
+                    onChange={(e) => setFormAssignee(e.target.value)}
+                  >
+                    <option value="">-- Seleccione un agente --</option>
+                    {members
+                      .filter(
+                        (m) => m.role === "agent" || m.role === "remote_exec",
+                      )
+                      .map((m) => (
+                        <option key={m.user_id} value={m.user_id}>
+                          {m.role.toUpperCase()} ({m.user_id.slice(0, 4)}...)
+                        </option>
+                      ))}
+                  </select>
+                </div>
+              )}
+
+              <div className="form-group">
+                <label className="ui-label">Inicio</label>
+                <input
+                  type="datetime-local"
+                  value={startsAtLocal}
+                  onChange={(e) => setStartsAtLocal(e.target.value)}
+                  className="ui-input"
+                />
+              </div>
+
+              <div className="form-group grow">
+                <label className="ui-label">Título</label>
+                <input
+                  type="text"
+                  value={title}
+                  onChange={(e) => setTitle(e.target.value)}
+                  className="ui-input"
+                />
+              </div>
+
+              <button
+                onClick={createAppointment}
+                disabled={loading}
+                className="ui-btn ui-btn-primary self-end"
+              >
+                {loading ? "..." : "Crear"}
+              </button>
+            </div>
           </div>
-        </div>
+        )}
 
         {/* CALENDARIO */}
         <div className="ui-card calendar-container">
@@ -405,7 +453,7 @@ export default function SchedulingPage() {
             eventPropGetter={eventStyleGetter}
             onSelectEvent={(e) => setSelectedAppointment(e.resource)}
             onSelectSlot={onSelectSlot}
-            selectable
+            selectable={currentUserRole !== "agent"}
             messages={{
               next: "Sig",
               previous: "Ant",

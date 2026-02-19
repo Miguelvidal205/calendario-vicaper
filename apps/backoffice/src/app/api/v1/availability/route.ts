@@ -35,10 +35,50 @@ export async function GET(req: Request) {
     const terrenoId = await requireActiveTerrenoId();
 
     const url = new URL(req.url);
+    const rawUserId = url.searchParams.get("assignedUserId") ?? "";
+    const rawFrom = url.searchParams.get("from") ?? "";
+    const rawTo = url.searchParams.get("to") ?? "";
+
+    // 🌟 CASO 1: El Administrador quiere ver la agenda de TODOS
+    if (rawUserId === "all") {
+      // Consultamos a Supabase omitiendo el filtro de assigned_user_id
+      const { data, error } = await sb
+        .from("appointments")
+        .select("*")
+        .eq("terreno_id", terrenoId)
+        .gte("starts_at", rawFrom)
+        .lte("starts_at", rawTo);
+
+      if (error) throw new Error(error.message);
+
+      // Mapeamos los datos de snake_case (DB) a camelCase (lo que espera toDto)
+      const allItems = data.map((row: any) => ({
+        id: row.id,
+        terrenoId: row.terreno_id,
+        assignedUserId: row.assigned_user_id,
+        leadId: row.lead_id,
+        title: row.title,
+        notes: row.notes,
+        status: row.status,
+        startsAt: new Date(row.starts_at),
+        endsAt: new Date(row.ends_at),
+        createdAt: new Date(row.created_at),
+        updatedAt: new Date(row.updated_at),
+      }));
+
+      // Usamos el validador de respuesta original para mantener la consistencia
+      const response = AvailabilityResponse.parse({
+        appointments: allItems.map(toDto),
+      });
+
+      return NextResponse.json(response);
+    }
+
+    // 🌟 CASO 2: Flujo normal (El Agente viendo su propia agenda)
     const raw = {
-      assignedUserId: url.searchParams.get("assignedUserId") ?? "",
-      from: url.searchParams.get("from") ?? "",
-      to: url.searchParams.get("to") ?? "",
+      assignedUserId: rawUserId,
+      from: rawFrom,
+      to: rawTo,
     };
 
     const parsed = AvailabilityQuery.parse(raw);

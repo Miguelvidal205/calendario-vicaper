@@ -4,7 +4,6 @@ import { usePathname } from "next/navigation";
 import { useState, useEffect } from "react";
 import Link from "next/link";
 
-// Definimos la interfaz para el terreno
 interface Terreno {
   id: string;
   name: string;
@@ -21,29 +20,44 @@ export default function DashboardLayout({
   const [activeTerreno, setActiveTerreno] = useState<Terreno | null>(null);
   const [loadingTerreno, setLoadingTerreno] = useState(true);
 
+  // Estado para el rol del usuario actual
+  const [currentUserRole, setCurrentUserRole] = useState<string>("");
+
   const pathname = usePathname();
 
-  // 1. Cargar el terreno activo al montar el layout
   useEffect(() => {
-    async function fetchActive() {
+    async function fetchLayoutData() {
+      // 1. Cargar el terreno activo
       try {
-        const res = await fetch("/api/v1/terrenos/active");
-        if (res.ok) {
-          const data = await res.json();
-          // Manejo flexible de la respuesta según tu API
-          if (data?.terreno) {
-            setActiveTerreno(data.terreno);
-          } else if (data?.id && data?.name) {
-            setActiveTerreno(data);
-          }
+        const resTerreno = await fetch("/api/v1/terrenos/active");
+        if (resTerreno.ok) {
+          const data = await resTerreno.json();
+          if (data?.terreno) setActiveTerreno(data.terreno);
+          else if (data?.id && data?.name) setActiveTerreno(data);
         }
       } catch (e) {
         console.error("No se pudo cargar terreno activo", e);
       } finally {
         setLoadingTerreno(false);
       }
+
+      // 2. Cargar el rol del usuario para ocultar menús
+      try {
+        const resRole = await fetch("/api/v1/terreno/members");
+        if (resRole.ok) {
+          const data = await resRole.json();
+          const list = data.members || [];
+          const myMember = list.find(
+            (m: any) => m.user_id === data.currentUserId,
+          );
+          if (myMember) setCurrentUserRole(myMember.role);
+        }
+      } catch (e) {
+        console.error("No se pudo cargar el rol", e);
+      }
     }
-    fetchActive();
+
+    fetchLayoutData();
   }, []);
 
   async function logout() {
@@ -57,7 +71,6 @@ export default function DashboardLayout({
   }
 
   // --- Componentes Auxiliares de Navegación ---
-
   function NavLink(props: {
     href: string;
     label: string;
@@ -65,14 +78,6 @@ export default function DashboardLayout({
   }) {
     const isActive =
       pathname === props.href || pathname?.startsWith(props.href + "/");
-
-    // Colores dinámicos basados en el estado activo
-    const bg = isActive ? "var(--text-main)" : "transparent"; // Ajustar según tus variables CSS globales
-    const color = isActive ? "var(--primary)" : "var(--text-secondary)";
-    const border = isActive
-      ? "1px solid var(--text-main)"
-      : "1px solid transparent";
-
     return (
       <Link
         href={props.href}
@@ -87,7 +92,7 @@ export default function DashboardLayout({
           fontWeight: 600,
           transition: "all 0.2s ease",
           marginBottom: 4,
-          backgroundColor: isActive ? "#eff6ff" : "transparent", // Fallback color si las vars fallan
+          backgroundColor: isActive ? "#eff6ff" : "transparent",
           color: isActive ? "#2563eb" : "#64748b",
           border: isActive ? "1px solid #dbeafe" : "1px solid transparent",
         }}
@@ -119,35 +124,7 @@ export default function DashboardLayout({
     );
   }
 
-  function NavMuted(props: { label: string }) {
-    return (
-      <div
-        style={{
-          padding: "8px 12px",
-          borderRadius: 8,
-          color: "#cbd5e1",
-          fontSize: 13,
-          cursor: "not-allowed",
-          display: "flex",
-          alignItems: "center",
-          gap: 8,
-        }}
-      >
-        <span
-          style={{
-            width: 6,
-            height: 6,
-            borderRadius: "50%",
-            background: "#e2e8f0",
-          }}
-        ></span>
-        {props.label}
-      </div>
-    );
-  }
-
   // --- Render Principal ---
-
   return (
     <div
       style={{
@@ -242,7 +219,6 @@ export default function DashboardLayout({
               >
                 Terreno Activo
               </div>
-
               <div
                 style={{
                   display: "flex",
@@ -281,6 +257,7 @@ export default function DashboardLayout({
 
           {/* NAVEGACIÓN */}
           <nav style={{ flex: 1, padding: "16px 12px", overflowY: "auto" }}>
+            {/* ESTO LO VEN TODOS */}
             <NavSectionTitle label="Agenda" />
             <NavLink
               href="/dashboard/scheduling"
@@ -288,30 +265,34 @@ export default function DashboardLayout({
               icon="📅"
             />
 
-            <NavSectionTitle label="Configuración" />
-            {/* Este link lleva a la página de redirección que definimos abajo */}
-            <NavLink
-              href="/dashboard/booking"
-              label="Widget Embebible"
-              icon="⚙️"
-            />
-            <NavLink
-              href="/dashboard/emails"
-              label="Configuración de correos"
-              icon="📧"
-            />
-            <NavLink
-              href="/dashboard/onboarding"
-              label="Nuevo Proyecto"
-              icon="➕"
-            />
+            {/* ESTO SOLO LO VEN ADMINS Y EJECUTIVOS REMOTOS */}
+            {currentUserRole !== "agent" && (
+              <>
+                <NavSectionTitle label="Equipo" />
+                <NavLink
+                  href="/dashboard/users"
+                  label="Usuarios del Sistema"
+                  icon="👥"
+                />
 
-            {/* <NavSectionTitle label="Desarrolladores" />
-            <NavLink href="/dashboard/api-keys" label="API Keys" icon="🔑" /> */}
-
-            {/* <NavSectionTitle label="Próximamente" />
-            <NavMuted label="CRM Clientes" />
-            <NavMuted label="Inventario" /> */}
+                <NavSectionTitle label="Configuración" />
+                <NavLink
+                  href="/dashboard/booking"
+                  label="Widget Embebible"
+                  icon="⚙️"
+                />
+                <NavLink
+                  href="/dashboard/emails"
+                  label="Configuración de correos"
+                  icon="📧"
+                />
+                <NavLink
+                  href="/dashboard/onboarding"
+                  label="Nuevo Proyecto"
+                  icon="➕"
+                />
+              </>
+            )}
           </nav>
 
           {/* FOOTER USER */}
@@ -344,12 +325,14 @@ export default function DashboardLayout({
                     fontWeight: 700,
                   }}
                 >
-                  AD
+                  {currentUserRole === "agent" ? "AG" : "AD"}
                 </div>
                 <div style={{ fontSize: 12 }}>
-                  <div style={{ fontWeight: 700, color: "#0f172a" }}>Admin</div>
+                  <div style={{ fontWeight: 700, color: "#0f172a" }}>
+                    {currentUserRole === "agent" ? "Agente" : "Admin / Ejec"}
+                  </div>
                   <div style={{ color: "#64748b", fontSize: 10 }}>
-                    admin@vicaper.com
+                    Mi cuenta
                   </div>
                 </div>
               </div>
